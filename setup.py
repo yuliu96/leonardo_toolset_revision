@@ -37,12 +37,22 @@ dev_requirements = [
     "wheel>=0.34.2",
 ]
 
-requirements = []
+requirements = [
+    "lsfm-destripe",
+    "lsfm-fuse",
+]
+
+napari_requirements = [
+    "lsfm-destripe-napari",
+    "lsfm-fusion-napari",
+    "napari"
+]
 
 extra_requirements = {
     "setup": setup_requirements,
     "test": test_requirements,
     "dev": dev_requirements,
+    "napari": napari_requirements,
     "all": [
         *requirements,
         *dev_requirements,
@@ -57,11 +67,11 @@ setup(
         "Intended Audience :: Developers",
         "License :: OSI Approved :: MIT License",
         "Natural Language :: English",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
     ],
-    description="LSFM toolset",
+    description="Leonardo: an LSFM image processing toolset",
     entry_points={
         "console_scripts": [
             "my_example=leonardo.bin.my_example:main"
@@ -75,7 +85,7 @@ setup(
     keywords="leonardo",
     name="leonardo",
     packages=find_packages(exclude=["tests", "*.tests", "*.tests.*"]),
-    python_requires=">=3.7",
+    python_requires=">=3.9",
     setup_requires=setup_requirements,
     test_suite="leonardo/tests",
     tests_require=test_requirements,
