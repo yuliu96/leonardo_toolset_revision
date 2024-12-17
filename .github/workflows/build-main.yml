@@ -30,7 +30,7 @@ jobs:
         pip install .[test]
     - name: Test with pytest
       run: |
-        pytest --cov-report xml --cov=leonardo leonardo/tests/
+        pytest --cov-report xml --cov=leonardo_toolset leonardo_toolset/tests/
     - name: Upload codecov
       uses: codecov/codecov-action@v1
 
@@ -49,10 +49,10 @@ jobs:
         pip install .[test]
     - name: Lint with flake8
       run: |
-        flake8 leonardo --count --verbose --show-source --statistics
+        flake8 leonardo_toolset --count --verbose --show-source --statistics
     - name: Check with black
       run: |
-        black --check leonardo
+        black --check leonardo_toolset
 
   publish:
     if: "contains(github.event.head_commit.message, 'Bump version')"

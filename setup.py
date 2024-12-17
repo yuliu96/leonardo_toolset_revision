@@ -74,7 +74,7 @@ setup(
     description="Leonardo: an LSFM image processing toolset",
     entry_points={
         "console_scripts": [
-            "run_leonardo=leonardo.bin.leonardo_workflow:main"
+            "run_leonardo=leonardo_toolset.bin.leonardo_workflow:main"
         ],
     },
     install_requires=requirements,
@@ -82,15 +82,15 @@ setup(
     long_description=readme,
     long_description_content_type="text/markdown",
     include_package_data=True,
-    keywords="leonardo",
-    name="leonardo",
+    keywords="leonardo_toolset",
+    name="leonardo_toolset",
     packages=find_packages(exclude=["tests", "*.tests", "*.tests.*"]),
     python_requires=">=3.9",
     setup_requires=setup_requirements,
-    test_suite="leonardo/tests",
+    test_suite="leonardo_toolset/tests",
     tests_require=test_requirements,
     extras_require=extra_requirements,
-    url="https://github.com/peng-lab/leonardo",
+    url="https://github.com/peng-lab/leonardo_toolset",
     # Do not edit this string manually, always use bumpversion
     # Details in CONTRIBUTING.rst
     version="0.0.2",

@@ -1,4 +1,4 @@
-Welcome to Leonardo's documentation!
+Welcome to leonardo_toolset's documentation!
 ======================================
 
 .. toctree::

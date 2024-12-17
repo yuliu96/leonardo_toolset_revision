@@ -5,20 +5,20 @@ helps, and credit will always be given.
 
 ## Get Started!
 
-Ready to contribute? Here's how to set up `leonardo` for local development.
+Ready to contribute? Here's how to set up `leonard_toolset` for local development.
 
-1. Fork the `leonardo` repo on GitHub.
+1. Fork the `leonardo_toolset` repo on GitHub.
 
 2. Clone your fork locally:
 
     ```bash
-    git clone git@github.com:{your_name_here}/leonardo.git
+    git clone git@github.com:{your_name_here}/leonardo_toolset.git
     ```
 
 3. Install the project in editable mode. (It is also recommended to work in a virtualenv or anaconda environment):
 
     ```bash
-    cd leonardo/
+    cd leonardo_toolset/
     pip install -e .[dev]
     ```
 
