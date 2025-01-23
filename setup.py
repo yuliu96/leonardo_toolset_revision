@@ -40,12 +40,13 @@ dev_requirements = [
 requirements = [
     "lsfm-destripe",
     "lsfm-fuse",
+    "numpy<2.0"
 ]
 
 napari_requirements = [
     "lsfm-destripe-napari",
     "lsfm-fusion-napari",
-    "napari"
+    "napari[all]"
 ]
 
 extra_requirements = {
