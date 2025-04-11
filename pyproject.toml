@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "leonardo_toolset"
 keywords = ["leonardo_toolset"]
-version = "0.1.1"
+version = "1.0.0rc1"
 description = "Leonardo: an LSFM image processing toolset"
 authors = [
     {name = "Yu Liu", email = "liuyu9671@gmail.com" },
@@ -44,7 +44,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "bump2version>=1.0.1",
+    "bump-my-version>=1.1.1",
     "coverage>=5.1",
     "ipython>=7.15.0",
     "m2r2>=0.2.7",
@@ -65,7 +65,7 @@ test = [
     "pytest-raises>=0.11",
 ]
 all = [
-    "bump2version>=1.0.1",
+    "bump-my-version>=1.1.1",
     "coverage>=5.1",
     "ipython>=7.15.0",
     "m2r2>=0.2.7",

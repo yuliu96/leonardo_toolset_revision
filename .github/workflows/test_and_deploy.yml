@@ -13,7 +13,7 @@ on:
 jobs:
   test:
     name: Test ${{ matrix.os }} with py${{ matrix.python-version }}
-    runs-on: $ {{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -38,10 +38,10 @@ jobs:
         with:
           run: python -m tox
         env:
-          PLATFORM: $ {{ matrix.platform }}
+          PLATFORM: ${{ matrix.platform }}
 
       - name: Upload codecov
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v5
   
   lint-flake8:
     name: Lint with flake8

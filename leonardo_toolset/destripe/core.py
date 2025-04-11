@@ -89,6 +89,37 @@ class DeStripe:
                 print("jax is not available on the current machine, use torch instead.")
             self.backend = "torch"
 
+    ### INTERFACE ###
+    ## THIS FUNCTION IS CALLED FROM NAPARI. DO NOT USE IT DIRECTLY.
+    @staticmethod
+    def process(params: dict) -> None:
+        """
+        Interface function for napari plugin.
+        """
+        model = DeStripe(
+            resample_ratio=params["resample_ratio"],
+            guided_upsample_kernel=params["guided_upsample_kernel"],
+            hessian_kernel_sigma=params["hessian_kernel_sigma"],
+            lambda_masking_mse=params["lambda_masking_mse"],
+            lambda_tv=params["lambda_tv"],
+            lambda_hessian=params["lambda_hessian"],
+            inc=params["angular_size"],
+            n_epochs=params["n_epochs"],
+            wedge_degree=params["latent_dimension"],
+            n_neighbors=params["n_neighbors"],
+            backend=params["backend"],
+        )
+
+        return model.train(
+            is_vertical=params["is_vertical"],
+            x=params["input_image"],
+            mask=params["mask"],
+            angle_offset=params["angle_offset"],
+            display=False,
+            non_positive=params["non_positive"],
+            display_angle_orientation=False,
+        )
+
     @staticmethod
     def train_on_one_slice(
         GuidedFilterHRModel,
