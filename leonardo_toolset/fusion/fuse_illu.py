@@ -64,10 +64,15 @@ import tqdm
 from skimage import morphology
 
 from leonardo_toolset.fusion.NSCT import NSCTdec
-from leonardo_toolset.fusion.utils import (EM2DPlus, extendBoundary2,
-                                           fusion_perslice,
-                                           imagej_metadata_tags, refineShape,
-                                           sgolay2dkernel, waterShed)
+from leonardo_toolset.fusion.utils import (
+    EM2DPlus,
+    extendBoundary2,
+    fusion_perslice,
+    imagej_metadata_tags,
+    refineShape,
+    sgolay2dkernel,
+    waterShed,
+)
 
 
 class FUSE_illu:

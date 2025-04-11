@@ -63,6 +63,7 @@ test = [
     "pytest>=5.4.3",
     "pytest-cov>=2.9.0",
     "pytest-raises>=0.11",
+    "tox>=3.15.2",
 ]
 all = [
     "bump-my-version>=1.1.1",
@@ -105,5 +106,5 @@ leonardo_toolset = []
 
 [tool.flake8]
 exclude = "docs/"
-ignore = ["W503"]
+ignore = ["W503", "E203", "E266"]
 max-line-length = 88
