@@ -37,7 +37,10 @@ dev_requirements = [
     "wheel>=0.34.2",
 ]
 
-requirements = ["lsfm-destripe", "lsfm-fuse", "numpy<2.0"]
+requirements = [
+    "lsfm-destripe",
+    "lsfm-fuse",
+]
 
 napari_requirements = ["lsfm-destripe-napari", "lsfm-fusion-napari", "napari[all]"]
 

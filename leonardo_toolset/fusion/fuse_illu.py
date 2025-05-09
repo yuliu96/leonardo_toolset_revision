@@ -47,7 +47,7 @@ import dask.array as da
 import scipy
 import torch
 import torch.nn.functional as F
-from aicsimageio import AICSImage
+from bioio import BioImage
 from scipy import signal
 
 try:
@@ -64,10 +64,15 @@ import tqdm
 from skimage import morphology
 
 from leonardo_toolset.fusion.NSCT import NSCTdec
-from leonardo_toolset.fusion.utils import (EM2DPlus, extendBoundary2,
-                                           fusion_perslice,
-                                           imagej_metadata_tags, refineShape,
-                                           sgolay2dkernel, waterShed)
+from leonardo_toolset.fusion.utils import (
+    EM2DPlus,
+    extendBoundary2,
+    fusion_perslice,
+    imagej_metadata_tags,
+    refineShape,
+    sgolay2dkernel,
+    waterShed,
+)
 
 
 class FUSE_illu:
@@ -189,7 +194,7 @@ class FUSE_illu:
             T_flag = 1
             if isinstance(left_illu_data, str):
                 left_illu_path = os.path.join(data_path, left_illu_data)
-                left_illu_handle = AICSImage(left_illu_path)
+                left_illu_handle = BioImage(left_illu_path)
                 self.sample_params["topillu_saving_name"] = os.path.splitext(
                     left_illu_data
                 )[0]
@@ -210,7 +215,7 @@ class FUSE_illu:
                 del left_illu_data_axis, left_illu_data
             if isinstance(right_illu_data, str):
                 right_illu_path = os.path.join(data_path, right_illu_data)
-                right_illu_handle = AICSImage(right_illu_path)
+                right_illu_handle = BioImage(right_illu_path)
                 self.sample_params["bottomillu_saving_name"] = os.path.splitext(
                     right_illu_data
                 )[0]
@@ -234,7 +239,7 @@ class FUSE_illu:
             T_flag = 0
             if isinstance(top_illu_data, str):
                 top_illu_path = os.path.join(data_path, top_illu_data)
-                top_illu_handle = AICSImage(top_illu_path)
+                top_illu_handle = BioImage(top_illu_path)
                 self.sample_params["topillu_saving_name"] = os.path.splitext(
                     top_illu_data
                 )[0]
@@ -254,7 +259,7 @@ class FUSE_illu:
 
             if isinstance(bottom_illu_data, str):
                 bottom_illu_path = os.path.join(data_path, bottom_illu_data)
-                bottom_illu_handle = AICSImage(bottom_illu_path)
+                bottom_illu_handle = BioImage(bottom_illu_path)
                 self.sample_params["bottomillu_saving_name"] = os.path.splitext(
                     bottom_illu_data
                 )[0]

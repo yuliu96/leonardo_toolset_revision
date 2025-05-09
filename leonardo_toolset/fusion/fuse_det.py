@@ -44,7 +44,7 @@ import dask
 import open3d as o3d
 import scipy.io as scipyio
 import torch
-from aicsimageio import AICSImage
+from bioio import BioImage
 from skimage import measure
 
 from leonardo_toolset.fusion.blobs_dog import blob_dog
@@ -850,14 +850,14 @@ class FUSE_det:
 
                 if not det_only_flag:
                     illu_name_ = illu_name + ".tif"
-                    respective_view_uint16_handle = AICSImage(
+                    respective_view_uint16_handle = BioImage(
                         os.path.join(
                             save_path,
                             self.sample_params["topillu_ventraldet_data_saving_name"],
                             illu_name_,
                         )
                     )
-                    moving_view_uint16_handle = AICSImage(
+                    moving_view_uint16_handle = BioImage(
                         os.path.join(
                             save_path,
                             self.sample_params["topillu_dorsaldet_data_saving_name"],
@@ -874,7 +874,7 @@ class FUSE_det:
                     )
                 else:
                     if isinstance(ventral_det_data, str):
-                        data_handle = AICSImage(
+                        data_handle = BioImage(
                             os.path.join(
                                 data_path,
                                 ventral_det_data,
@@ -891,7 +891,7 @@ class FUSE_det:
                         else:
                             respective_view_uint16 = copy.deepcopy(ventral_det_data)
                     if isinstance(dorsal_det_data, str):
-                        data_handle = AICSImage(
+                        data_handle = BioImage(
                             os.path.join(
                                 data_path,
                                 dorsal_det_data,
@@ -1087,14 +1087,14 @@ class FUSE_det:
 
                 if not det_only_flag:
                     illu_name_ = illu_name
-                    respective_view_uint16_handle = AICSImage(
+                    respective_view_uint16_handle = BioImage(
                         os.path.join(
                             save_path,
                             self.sample_params["topillu_ventraldet_data_saving_name"],
                             illu_name_ + ".tif",
                         )
                     )
-                    moving_view_uint16_handle = AICSImage(
+                    moving_view_uint16_handle = BioImage(
                         os.path.join(
                             save_path,
                             self.sample_params["topillu_dorsaldet_data_saving_name"],
@@ -1111,7 +1111,7 @@ class FUSE_det:
                     )
                 else:
                     if isinstance(ventral_det_data, str):
-                        data_handle = AICSImage(
+                        data_handle = BioImage(
                             os.path.join(
                                 data_path,
                                 ventral_det_data,
@@ -1131,7 +1131,7 @@ class FUSE_det:
                     if isinstance(respective_view_uint16, da.Array):
                         respective_view_uint16 = respective_view_uint16.compute()
 
-                    moving_view_uint16_handle = AICSImage(
+                    moving_view_uint16_handle = BioImage(
                         os.path.join(
                             save_path,
                             self.sample_params["topillu_dorsaldet_data_saving_name"],
@@ -1334,13 +1334,13 @@ class FUSE_det:
                     ["top", "bottom"],
                 ):
                     if isinstance(locals()[f + "_illu_dorsal_det_data"], str):
-                        f_handle = AICSImage(
+                        f_handle = BioImage(
                             os.path.join(
                                 data_path, locals()[f + "_illu_dorsal_det_data"]
                             )
                         )
                     else:
-                        f_handle = AICSImage(locals()[f + "_illu_dorsal_det_data"])
+                        f_handle = BioImage(locals()[f + "_illu_dorsal_det_data"])
                     inputs = f_handle.get_image_data(
                         "ZXY" if T_flag else "ZYX", T=0, C=0
                     )
@@ -1410,7 +1410,7 @@ class FUSE_det:
         print("read in...")
         fl = illu_name + ".tif"
         if not det_only_flag:
-            f_handle = AICSImage(
+            f_handle = BioImage(
                 os.path.join(
                     save_path,
                     self.sample_params["topillu_ventraldet_data_saving_name"],
@@ -1420,7 +1420,7 @@ class FUSE_det:
             illu_front = f_handle.get_image_data("ZXY" if T_flag else "ZYX", T=0, C=0)
         else:
             if isinstance(ventral_det_data, str):
-                data_handle = AICSImage(
+                data_handle = BioImage(
                     os.path.join(
                         data_path,
                         ventral_det_data,
@@ -1445,7 +1445,7 @@ class FUSE_det:
                 if self.registration_params["require_reg_finetune"]
                 else "_coarse_reg"
             )
-            f_handle = AICSImage(
+            f_handle = BioImage(
                 os.path.join(
                     save_path,
                     self.sample_params["topillu_dorsaldet_data_saving_name"],
@@ -1462,7 +1462,7 @@ class FUSE_det:
             illu_back = f_handle.get_image_data("ZXY" if T_flag else "ZYX", T=0, C=0)
         else:
             if isinstance(dorsal_det_data, str):
-                data_handle = AICSImage(
+                data_handle = BioImage(
                     os.path.join(
                         data_path,
                         dorsal_det_data,
@@ -1583,7 +1583,7 @@ class FUSE_det:
                 ],
                 str,
             ):
-                top_handle = AICSImage(
+                top_handle = BioImage(
                     os.path.join(
                         data_path,
                         locals()[
@@ -1594,7 +1594,7 @@ class FUSE_det:
                     )
                 )
             else:
-                top_handle = AICSImage(
+                top_handle = BioImage(
                     locals()[
                         "{}_illu_ventral_det_data".format("left" if T_flag else "top")
                     ]
@@ -1604,7 +1604,7 @@ class FUSE_det:
             )
         else:
             if isinstance(ventral_det_data, str):
-                data_handle = AICSImage(
+                data_handle = BioImage(
                     os.path.join(
                         data_path,
                         ventral_det_data,
@@ -1642,7 +1642,7 @@ class FUSE_det:
                     if self.registration_params["require_reg_finetune"]
                     else "_coarse_reg"
                 )
-            bottom_handle = AICSImage(
+            bottom_handle = BioImage(
                 os.path.join(
                     save_path,
                     self.sample_params[
@@ -1670,14 +1670,14 @@ class FUSE_det:
                     locals()["{}_illu_dorsal_det_data".format(illu_direct)],
                     str,
                 ):
-                    bottom_handle = AICSImage(
+                    bottom_handle = BioImage(
                         os.path.join(
                             data_path,
                             locals()["{}_illu_dorsal_det_data".format(illu_direct)],
                         )
                     )
                 else:
-                    bottom_handle = AICSImage(
+                    bottom_handle = BioImage(
                         locals()["{}_illu_dorsal_det_data".format(illu_direct)]
                     )
                 rawPlanesBottomO = bottom_handle.get_image_data(
@@ -1685,7 +1685,7 @@ class FUSE_det:
                 )
             else:
                 if isinstance(dorsal_det_data, str):
-                    data_handle = AICSImage(
+                    data_handle = BioImage(
                         os.path.join(
                             data_path,
                             dorsal_det_data,
@@ -1790,7 +1790,7 @@ class FUSE_det:
                 ],
                 str,
             ):
-                top_handle = AICSImage(
+                top_handle = BioImage(
                     os.path.join(
                         data_path,
                         locals()[
@@ -1801,7 +1801,7 @@ class FUSE_det:
                     )
                 )
             else:
-                top_handle = AICSImage(
+                top_handle = BioImage(
                     locals()[
                         "{}_illu_ventral_det_data".format(
                             "right" if T_flag else "bottom"
@@ -1827,7 +1827,7 @@ class FUSE_det:
                 else:
                     reg_level = "_reg"
 
-                bottom_handle = AICSImage(
+                bottom_handle = BioImage(
                     os.path.join(
                         save_path,
                         self.sample_params[
@@ -1856,14 +1856,14 @@ class FUSE_det:
                     locals()["{}_illu_dorsal_det_data".format(illu_direct)],
                     str,
                 ):
-                    bottom_handle = AICSImage(
+                    bottom_handle = BioImage(
                         os.path.join(
                             data_path,
                             locals()["{}_illu_dorsal_det_data".format(illu_direct)],
                         )
                     )
                 else:
-                    bottom_handle = AICSImage(
+                    bottom_handle = BioImage(
                         locals()["{}_illu_dorsal_det_data".format(illu_direct)]
                     )
             rawPlanesBottomO = bottom_handle.get_image_data(
@@ -2027,7 +2027,7 @@ class FUSE_det:
         if not det_only_flag:
             fl = illu_name + ".tif"
 
-            f_handle = AICSImage(
+            f_handle = BioImage(
                 os.path.join(
                     save_path,
                     self.sample_params["topillu_ventraldet_data_saving_name"],
@@ -2037,7 +2037,7 @@ class FUSE_det:
             illu_front = f_handle.get_image_data("ZXY" if T_flag else "ZYX", T=0, C=0)
         else:
             if isinstance(ventral_det_data, str):
-                data_handle = AICSImage(
+                data_handle = BioImage(
                     os.path.join(
                         data_path,
                         ventral_det_data,
@@ -2063,7 +2063,7 @@ class FUSE_det:
                 if self.registration_params["require_reg_finetune"]
                 else "_coarse_reg"
             )
-            f_handle = AICSImage(
+            f_handle = BioImage(
                 os.path.join(
                     save_path,
                     self.sample_params["topillu_dorsaldet_data_saving_name"],
@@ -2078,7 +2078,7 @@ class FUSE_det:
             illu_back = f_handle.get_image_data("ZXY" if T_flag else "ZYX", T=0, C=0)
         else:
             if not det_only_flag:
-                f_handle = AICSImage(
+                f_handle = BioImage(
                     os.path.join(
                         save_path,
                         self.sample_params["topillu_dorsaldet_data_saving_name"],
@@ -2090,7 +2090,7 @@ class FUSE_det:
                 )
             else:
                 if isinstance(dorsal_det_data, str):
-                    data_handle = AICSImage(
+                    data_handle = BioImage(
                         os.path.join(
                             data_path,
                             dorsal_det_data,
