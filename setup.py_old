@@ -37,17 +37,9 @@ dev_requirements = [
     "wheel>=0.34.2",
 ]
 
-requirements = [
-    "lsfm-destripe",
-    "lsfm-fuse",
-    "numpy<2.0"
-]
+requirements = ["lsfm-destripe", "lsfm-fuse", "numpy<2.0"]
 
-napari_requirements = [
-    "lsfm-destripe-napari",
-    "lsfm-fusion-napari",
-    "napari[all]"
-]
+napari_requirements = ["lsfm-destripe-napari", "lsfm-fusion-napari", "napari[all]"]
 
 extra_requirements = {
     "setup": setup_requirements,
@@ -57,7 +49,7 @@ extra_requirements = {
     "all": [
         *requirements,
         *dev_requirements,
-    ]
+    ],
 }
 
 setup(
@@ -74,9 +66,7 @@ setup(
     ],
     description="Leonardo: an LSFM image processing toolset",
     entry_points={
-        "console_scripts": [
-            "run_leonardo=leonardo_toolset.bin.leonardo_workflow:main"
-        ],
+        "console_scripts": ["run_leonardo=leonardo_toolset.bin.leonardo_workflow:main"],
     },
     install_requires=requirements,
     license="MIT license",
