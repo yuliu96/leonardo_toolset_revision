@@ -11,7 +11,7 @@ import logging
 import sys
 import traceback
 
-from aicsimageio.writers import OmeTiffWriter
+from bioio.writers import OmeTiffWriter
 
 from leonardo_toolset.destripe import DeStripe, get_module_version
 

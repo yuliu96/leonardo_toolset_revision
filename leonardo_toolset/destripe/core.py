@@ -33,7 +33,7 @@ import dask.array as da
 import matplotlib.pyplot as plt
 import torch
 import tqdm
-from aicsimageio import AICSImage
+from bioio import BioImage
 
 from leonardo_toolset.destripe.guided_filter_upsample import GuidedUpsample
 from leonardo_toolset.destripe.loss_term_torch import Loss_torch
@@ -431,7 +431,7 @@ class DeStripe:
         if x is not None:
             print("Start DeStripe...\n")
             flag_compose = False
-            X_handle = AICSImage(x)
+            X_handle = BioImage(x)
             X = X_handle.get_image_dask_data("ZYX", T=0, C=0)[:, None, ...]
         else:
             print("Start DeStripe-FUSE...\n")
@@ -442,7 +442,7 @@ class DeStripe:
             X_data = []
             for key, item in kwargs.items():
                 if key.startswith("x_"):
-                    X_handle = AICSImage(item)
+                    X_handle = BioImage(item)
                     X_data.append(X_handle.get_image_dask_data("ZYX", T=0, C=0))
             X = da.stack(X_data, 1)
 
@@ -457,7 +457,7 @@ class DeStripe:
         if mask is None:
             mask_data = np.zeros((z, m, n), dtype=bool)
         else:
-            mask_handle = AICSImage(mask)
+            mask_handle = BioImage(mask)
             mask_data = mask_handle.get_image_dask_data("ZYX", T=0, C=0)
             assert mask_data.shape == (z, m, n), print(
                 "mask should be of same shape as input volume(s)."

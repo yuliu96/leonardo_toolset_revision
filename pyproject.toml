@@ -22,12 +22,10 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 dependencies = [
-    "numpy<2.0",
     "jax[cuda]",
     "scikit-image",
     "torch",
     "torchvision",
-    "aicsimageio",
     "tqdm",
     "matplotlib",
     "dm-haiku",
@@ -40,6 +38,8 @@ dependencies = [
     "colour",
     "open3d",
     "h5py",
+    "bioio",
+    "bioio-tifffile",
 ]
 
 [project.optional-dependencies]
