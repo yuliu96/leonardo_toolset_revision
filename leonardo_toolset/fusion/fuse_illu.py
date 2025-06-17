@@ -68,10 +68,12 @@ from leonardo_toolset.fusion.utils import (
     EM2DPlus,
     extendBoundary2,
     fusion_perslice,
-    imagej_metadata_tags,
     refineShape,
     sgolay2dkernel,
     waterShed,
+    parse_yaml_illu,
+    extract_leaf_file_paths_from_file,
+    read_with_bioio,
 )
 
 
@@ -168,7 +170,6 @@ class FUSE_illu:
     def train(
         self,
         data_path: str = "",
-        sample_name: str = "",
         top_illu_data: Union[np.ndarray, da.core.Array, str] = None,
         bottom_illu_data: Union[np.ndarray, da.core.Array, str] = None,
         left_illu_data: Union[np.ndarray, da.core.Array, str] = None,
@@ -181,11 +182,302 @@ class FUSE_illu:
         camera_position: str = "",
         display: bool = True,
     ):
+        if not os.path.exists(save_path):
+            print("saving path does not exist.")
+            return
+        if not os.path.exists(os.path.join(save_path, save_folder)):
+            os.makedirs(os.path.join(save_path, save_folder))
+        allowed_keys = parse_yaml_illu.__code__.co_varnames  # or手动列出
+        args_dict = {k: v for k, v in locals().items() if k in allowed_keys}
+        args_dict.update({"train_params": self.train_params})
+        args_dict.update(
+            {
+                "file_name": os.path.join(
+                    save_path,
+                    save_folder,
+                    f"{camera_position+'_' if len(camera_position) != 0 else ''}illu_info.yaml",
+                )
+            }
+        )
+        yaml_path = parse_yaml_illu(**args_dict)
+
+        illu_name = "illuFusionResult{}.tif".format(
+            "" if self.train_params["require_segmentation"] else "_without_segmentation"
+        )
+        fb_xy = "fusionBoundary_xy{}.tif".format(
+            "" if self.train_params["require_segmentation"] else "_without_segmentation"
+        )
+
+        leaf_paths = extract_leaf_file_paths_from_file(yaml_path)
+        leaf_paths.update(
+            {
+                "illu_name": illu_name,
+                "fb_xy": fb_xy,
+            }
+        )
+
+        self.sample_params = {}
+        _name = {}
+        _sfx = "+" + camera_position if len(camera_position) != 0 else ""
+        print("Read in...")
+        if (left_illu_data is not None) and (right_illu_data is not None):
+            T_flag = 1
+            if isinstance(left_illu_data, str):
+                _name["topillu"] = os.path.splitext(left_illu_data)[0]
+                left_illu_data = os.path.join(data_path, left_illu_data)
+            else:
+                _name["topillu"] = "left_illu{}".format(_sfx)
+            rawPlanes_top = read_with_bioio(left_illu_data, T_flag)
+            if isinstance(right_illu_data, str):
+                _name["bottomillu"] = os.path.splitext(right_illu_data)[0]
+                right_illu_data = os.path.join(data_path, right_illu_data)
+            else:
+                _name["bottomillu"] = "right_illu{}".format(_sfx)
+            rawPlanes_bottom = read_with_bioio(right_illu_data, T_flag)
+
+        elif (top_illu_data is not None) and (bottom_illu_data is not None):
+            T_flag = 0
+            if isinstance(top_illu_data, str):
+                _name["topillu"] = os.path.splitext(top_illu_data)[0]
+                top_illu_data = os.path.join(data_path, top_illu_data)
+            else:
+                _name["topillu"] = "top_illu{}".format(_sfx)
+            rawPlanes_top = read_with_bioio(top_illu_data, T_flag)
+
+            if isinstance(bottom_illu_data, str):
+                _name["bottomillu"] = os.path.splitext(bottom_illu_data)[0]
+                bottom_illu_data = os.path.join(data_path, bottom_illu_data)
+            else:
+                _name["bottomillu"] = "bottom_illu{}".format(_sfx)
+            rawPlanes_bottom = read_with_bioio(bottom_illu_data, T_flag)
+        else:
+            print("input(s) missing, please check.")
+            return
+        save_path = os.path.join(save_path, save_folder)
+        for k in _name.keys():
+            sub_folder = os.path.join(save_path, _name[k])
+            if not os.path.exists(sub_folder):
+                os.makedirs(sub_folder)
+        if cam_pos == "back":
+            rawPlanes_top = rawPlanes_top[::-1, :, :]
+            rawPlanes_bottom = rawPlanes_bottom[::-1, :, :]
+
+        print("\nLocalize sample...")
+        cropInfo, MIP_info = self.localizingSample(rawPlanes_top, rawPlanes_bottom)
+        print(cropInfo)
+        if self.train_params["require_precropping"]:
+            if len(self.train_params["precropping_params"]) == 0:
+                xs, xe, ys, ye = cropInfo.loc[
+                    "in summary", ["startX", "endX", "startY", "endY"]
+                ].astype(int)
+            else:
+                if T_flag:
+                    ys, ye, xs, xe = self.train_params["precropping_params"]
+                else:
+                    xs, xe, ys, ye = self.train_params["precropping_params"]
+        else:
+            xs, xe, ys, ye = None, None, None, None
+
+        s_o, m_o, n_o = rawPlanes_top.shape
+        if display:
+            fig, (ax1, ax2) = plt.subplots(1, 2, dpi=200)
+            MIP_top = rawPlanes_top.max(0)
+            if T_flag:
+                MIP_top = MIP_top.T
+            MIP_bottom = rawPlanes_bottom.max(0)
+            if self.train_params["require_precropping"]:
+                top_left_point = [ys, xs]
+                if T_flag:
+                    top_left_point = [top_left_point[1], top_left_point[0]]
+            if T_flag:
+                MIP_bottom = MIP_bottom.T
+            ax1.imshow(MIP_top)
+            if self.train_params["require_precropping"]:
+                rect = patches.Rectangle(
+                    tuple(top_left_point),
+                    (ye - ys) if (not T_flag) else (xe - xs),
+                    (xe - xs) if (not T_flag) else (ye - ys),
+                    linewidth=1,
+                    edgecolor="r",
+                    facecolor="none",
+                )
+                ax1.add_patch(rect)
+            ax1.set_title(
+                "{} illu".format("left" if T_flag else "top"), fontsize=8, pad=1
+            )
+            ax1.axis("off")
+            ax2.imshow(MIP_bottom)
+            if self.train_params["require_precropping"]:
+                rect = patches.Rectangle(
+                    tuple(top_left_point),
+                    (ye - ys) if (not T_flag) else (xe - xs),
+                    (xe - xs) if (not T_flag) else (ye - ys),
+                    linewidth=1,
+                    edgecolor="r",
+                    facecolor="none",
+                )
+                ax2.add_patch(rect)
+            ax2.set_title(
+                "{} illu".format("right" if T_flag else "bottom"), fontsize=8, pad=1
+            )
+            ax2.axis("off")
+            plt.show()
+
+        print("\nCalculate volumetric measurements...")
+        thvol_top, maxvvol_top, minvvol_top = self.measureSample(
+            rawPlanes_top[:, xs:xe, ys:ye][::4, ::4, ::4],
+            "top",
+            leaf_paths["info.npy"][0],
+            MIP_info,
+        )
+        thvol_bottom, maxvvol_bottom, minvvol_bottom = self.measureSample(
+            rawPlanes_bottom[:, xs:xe, ys:ye][::4, ::4, ::4],
+            "bottom",
+            leaf_paths["info.npy"][1],
+            MIP_info,
+        )
+
+        s, m_c, n_c = rawPlanes_top.shape
+
+        m_c = len(np.arange(m_c)[xs:xe])
+        n_c = len(np.arange(n_c)[ys:ye])
+        m = len(np.arange(m_c)[:: self.train_params["resample_ratio"]])
+        n = len(np.arange(n_c)[:: self.train_params["resample_ratio"]])
+
+        print("\nExtract features...")
+        topF, bottomF = self.extractNSCTF(
+            s,
+            m,
+            n,
+            topVol=rawPlanes_top[:, xs:xe, ys:ye],
+            bottomVol=rawPlanes_bottom[:, xs:xe, ys:ye],
+        )
+
+        t_topF = filters.threshold_otsu(topF[::4, ::2, ::2])
+        t_bottomF = filters.threshold_otsu(bottomF[::4, ::2, ::2])
+
+        print("\nSegment sample...")
+        if self.train_params["require_segmentation"]:
+            segMask = self.segmentSample(
+                th_top=thvol_top,
+                th_bottom=thvol_bottom,
+                max_top=maxvvol_top,
+                max_bottom=maxvvol_bottom,
+                topVol=rawPlanes_top[
+                    :,
+                    xs : xe : self.train_params["resample_ratio"],
+                    ys : ye : self.train_params["resample_ratio"],
+                ],
+                bottomVol=rawPlanes_bottom[
+                    :,
+                    xs : xe : self.train_params["resample_ratio"],
+                    ys : ye : self.train_params["resample_ratio"],
+                ],
+                topVol_F=topF.transpose(1, 0, 2),
+                bottomVol_F=bottomF.transpose(1, 0, 2),
+                th_top_F=t_topF,
+                th_bottom_F=t_bottomF,
+                sparse_sample=sparse_sample,
+            )
+            np.save(leaf_paths["segmentation_illu.npy"], segMask)
+        else:
+            segMask = np.ones((s, m, n), dtype=bool)
+
+        print("\nDual-illumination fusion...")
+        boundary = self.dualViewFusion(topF, bottomF, segMask)
+
+        boundary = (
+            F.interpolate(
+                torch.from_numpy(boundary[None, None, :, :]),
+                size=(s, n_c),
+                mode="bilinear",
+                align_corners=True,
+            )
+            .squeeze()
+            .data.numpy()
+        )
+
+        boundary = boundary * self.train_params["resample_ratio"]
+
+        boundaryE = np.zeros((s, n_o))
+        boundaryE[:, ys:ye] = boundary
+        if ys is not None:
+            boundaryE = extendBoundary2(boundaryE, 11)
+        if xs is not None:
+            boundaryE += xs
+        boundaryE = np.clip(boundaryE, 0, m_o).astype(np.uint16)
+        if cam_pos == "back":
+            boundaryE = boundaryE[::-1, :]
+        tifffile.imwrite(leaf_paths[fb_xy][0], boundaryE)
+
+        print("\nStitching...")
+        boundaryE = tifffile.imread(leaf_paths[fb_xy][0]).astype(np.float32)
+        if cam_pos == "back":
+            boundaryE = boundaryE[::-1, :]
+
+        if save_separate_results:
+            if os.path.exists(leaf_paths["fuse_illu_mask"]):
+                shutil.rmtree(leaf_paths["fuse_illu_mask"])
+            os.makedirs(leaf_paths["fuse_illu_mask"])
+            p = leaf_paths["fuse_illu_mask"]
+        else:
+            p = None
+
+        recon = fusionResult(
+            T_flag,
+            rawPlanes_top,
+            rawPlanes_bottom,
+            copy.deepcopy(boundaryE),
+            self.train_params["device"],
+            save_separate_results,
+            path=p,
+            GFr=copy.deepcopy(self.train_params["window_size"]),
+        )
+
+        if T_flag:
+            result = recon.transpose(0, 2, 1)
+        else:
+            result = recon
+        del recon
+        if display:
+            fig, (ax1, ax2) = plt.subplots(1, 2, dpi=200)
+            xyMIP = result.max(0)
+            ax1.imshow(xyMIP)
+            ax1.set_title("result", fontsize=8, pad=1)
+            ax1.axis("off")
+            ax2.imshow(np.zeros_like(xyMIP))
+            ax2.axis("off")
+            plt.show()
+        if cam_pos == "back":
+            result = result[::-1, :, :]
+
+        print("Save...")
+        tifffile.imwrite(leaf_paths[illu_name][0], result)
+        return result
+
+    def train_with_boundary(
+        self,
+        data_path: str = "",
+        sample_name: str = "",
+        top_illu_data: Union[np.ndarray, da.core.Array, str] = None,
+        bottom_illu_data: Union[np.ndarray, da.core.Array, str] = None,
+        left_illu_data: Union[np.ndarray, da.core.Array, str] = None,
+        right_illu_data: Union[np.ndarray, da.core.Array, str] = None,
+        save_path: str = "",
+        save_folder: str = "",
+        save_separate_results: bool = False,
+        cam_pos: str = "front",
+        camera_position: str = "",
+        display: bool = True,
+        boundary_path: str = "",
+    ):
+        print("Running illum fusion using precomputed boundary...")
+        # from train method start (180-288)
         data_path = os.path.join(data_path, sample_name)
         if not os.path.exists(save_path):
             print("saving path does not exist.")
             return
-        save_path = os.path.join(save_path, save_folder)
+        # save_path = os.path.join(save_path, save_folder)
         if not os.path.exists(save_path):
             os.makedirs(save_path)
         self.sample_params = {}
@@ -280,193 +572,24 @@ class FUSE_illu:
             print("input(s) missing, please check.")
             return
 
-        for k in self.sample_params.keys():
+        """for k in self.sample_params.keys():
             if "saving_name" in k:
                 sub_folder = os.path.join(save_path, self.sample_params[k])
             if not os.path.exists(sub_folder):
-                os.makedirs(sub_folder)
+                os.makedirs(sub_folder)"""
+        sub_folder = save_path
+
         if cam_pos == "back":
             rawPlanes_top = rawPlanes_top[::-1, :, :]
             rawPlanes_bottom = rawPlanes_bottom[::-1, :, :]
+        # finished copy from train method
 
-        print("\nLocalize sample...")
-        cropInfo, MIP_info = self.localizingSample(rawPlanes_top, rawPlanes_bottom)
-        print(cropInfo)
-        if self.train_params["require_precropping"]:
-            if len(self.train_params["precropping_params"]) == 0:
-                xs, xe, ys, ye = cropInfo.loc[
-                    "in summary", ["startX", "endX", "startY", "endY"]
-                ].astype(int)
-            else:
-                if T_flag:
-                    ys, ye, xs, xe = self.train_params["precropping_params"]
-                else:
-                    xs, xe, ys, ye = self.train_params["precropping_params"]
-        else:
-            xs, xe, ys, ye = None, None, None, None
-
-        s_o, m_o, n_o = rawPlanes_top.shape
-        if display:
-            fig, (ax1, ax2) = plt.subplots(1, 2, dpi=200)
-            MIP_top = rawPlanes_top.max(0)
-            if T_flag:
-                MIP_top = MIP_top.T
-            MIP_bottom = rawPlanes_bottom.max(0)
-            if self.train_params["require_precropping"]:
-                top_left_point = [ys, xs]
-                if T_flag:
-                    top_left_point = [top_left_point[1], top_left_point[0]]
-            if T_flag:
-                MIP_bottom = MIP_bottom.T
-            ax1.imshow(MIP_top)
-            if self.train_params["require_precropping"]:
-                rect = patches.Rectangle(
-                    tuple(top_left_point),
-                    (ye - ys) if (not T_flag) else (xe - xs),
-                    (xe - xs) if (not T_flag) else (ye - ys),
-                    linewidth=1,
-                    edgecolor="r",
-                    facecolor="none",
-                )
-                ax1.add_patch(rect)
-            ax1.set_title(
-                "{} illu".format("left" if T_flag else "top"), fontsize=8, pad=1
-            )
-            ax1.axis("off")
-            ax2.imshow(MIP_bottom)
-            if self.train_params["require_precropping"]:
-                rect = patches.Rectangle(
-                    tuple(top_left_point),
-                    (ye - ys) if (not T_flag) else (xe - xs),
-                    (xe - xs) if (not T_flag) else (ye - ys),
-                    linewidth=1,
-                    edgecolor="r",
-                    facecolor="none",
-                )
-                ax2.add_patch(rect)
-            ax2.set_title(
-                "{} illu".format("right" if T_flag else "bottom"), fontsize=8, pad=1
-            )
-            ax2.axis("off")
-            plt.show()
-
-        print("\nCalculate volumetric measurements...")
-        thvol_top, maxvvol_top, minvvol_top = self.measureSample(
-            rawPlanes_top[:, xs:xe, ys:ye][::4, ::4, ::4],
-            "top",
-            os.path.join(save_path, self.sample_params["topillu_saving_name"]),
-            MIP_info,
-        )
-        thvol_bottom, maxvvol_bottom, minvvol_bottom = self.measureSample(
-            rawPlanes_bottom[:, xs:xe, ys:ye][::4, ::4, ::4],
-            "bottom",
-            os.path.join(save_path, self.sample_params["bottomillu_saving_name"]),
-            MIP_info,
-        )
-
-        s, m_c, n_c = rawPlanes_top.shape
-
-        m_c = len(np.arange(m_c)[xs:xe])
-        n_c = len(np.arange(n_c)[ys:ye])
-        m = len(np.arange(m_c)[:: self.train_params["resample_ratio"]])
-        n = len(np.arange(n_c)[:: self.train_params["resample_ratio"]])
-
-        print("\nExtract features...")
-        topF, bottomF = self.extractNSCTF(
-            s,
-            m,
-            n,
-            topVol=rawPlanes_top[:, xs:xe, ys:ye],
-            bottomVol=rawPlanes_bottom[:, xs:xe, ys:ye],
-        )
-
-        t_topF = filters.threshold_otsu(topF[::4, ::2, ::2])
-        t_bottomF = filters.threshold_otsu(bottomF[::4, ::2, ::2])
-
-        print("\nSegment sample...")
-        if self.train_params["require_segmentation"]:
-            segMask = self.segmentSample(
-                th_top=thvol_top,
-                th_bottom=thvol_bottom,
-                max_top=maxvvol_top,
-                max_bottom=maxvvol_bottom,
-                topVol=rawPlanes_top[
-                    :,
-                    xs : xe : self.train_params["resample_ratio"],
-                    ys : ye : self.train_params["resample_ratio"],
-                ],
-                bottomVol=rawPlanes_bottom[
-                    :,
-                    xs : xe : self.train_params["resample_ratio"],
-                    ys : ye : self.train_params["resample_ratio"],
-                ],
-                topVol_F=topF.transpose(1, 0, 2),
-                bottomVol_F=bottomF.transpose(1, 0, 2),
-                th_top_F=t_topF,
-                th_bottom_F=t_bottomF,
-                sparse_sample=sparse_sample,
-            )
-            np.save(
-                os.path.join(
-                    save_path,
-                    self.sample_params["topillu_saving_name"],
-                    "segmentation_illu.npy",
-                ),
-                segMask,
-            )
-        else:
-            segMask = np.ones((s, m, n), dtype=bool)
-
-        print("\nDual-illumination fusion...")
-        boundary = self.dualViewFusion(topF, bottomF, segMask)
-
-        boundary = (
-            F.interpolate(
-                torch.from_numpy(boundary[None, None, :, :]),
-                size=(s, n_c),
-                mode="bilinear",
-                align_corners=True,
-            )
-            .squeeze()
-            .data.numpy()
-        )
-
-        boundary = boundary * self.train_params["resample_ratio"]
-
-        boundaryE = np.zeros((s, n_o))
-        boundaryE[:, ys:ye] = boundary
-        if ys is not None:
-            boundaryE = extendBoundary2(boundaryE, 11)
-        if xs is not None:
-            boundaryE += xs
-        boundaryE = np.clip(boundaryE, 0, m_o).astype(np.uint16)
-        if cam_pos == "back":
-            boundaryE = boundaryE[::-1, :]
-        tifffile.imwrite(
-            os.path.join(
-                save_path,
-                self.sample_params["topillu_saving_name"],
-                "fusionBoundary_xy{}.tif".format(
-                    ""
-                    if self.train_params["require_segmentation"]
-                    else "_without_segmentation"
-                ),
-            ),
-            boundaryE,
-        )
-
+        # copy from 455 - end of train function
         print("\nStitching...")
         boundaryE = tifffile.imread(
-            os.path.join(
-                save_path,
-                self.sample_params["topillu_saving_name"],
-                "fusionBoundary_xy{}.tif".format(
-                    ""
-                    if self.train_params["require_segmentation"]
-                    else "_without_segmentation"
-                ),
-            )
+            os.path.join(boundary_path, "fusionBoundary_xy.tif")
         ).astype(np.float32)
+
         if cam_pos == "back":
             boundaryE = boundaryE[::-1, :]
 
@@ -501,10 +624,8 @@ class FUSE_illu:
             self.train_params["device"],
             save_separate_results,
             path=os.path.join(
-                save_path,
-                self.sample_params["topillu_saving_name"],
-                "fuse_illu_mask",
-            ),
+                save_path, "fuse_illu_mask"
+            ),  # path=os.path.join(save_path,self.sample_params["topillu_saving_name"],"fuse_illu_mask",)
             GFr=copy.deepcopy(self.train_params["window_size"]),
         )
 
@@ -526,7 +647,7 @@ class FUSE_illu:
             result = result[::-1, :, :]
 
         print("Save...")
-        tifffile.imwrite(
+        """tifffile.imwrite(
             os.path.join(save_path, self.sample_params["topillu_saving_name"])
             + "/illuFusionResult{}.tif".format(
                 ""
@@ -534,33 +655,19 @@ class FUSE_illu:
                 else "_without_segmentation"
             ),
             result,
+        )"""
+        tifffile.imwrite(
+            os.path.join(
+                save_path,
+                "illuFusionResult{}.tif".format(
+                    ""
+                    if self.train_params["require_segmentation"]
+                    else "_without_segmentation"
+                ),
+            ),
+            result,
         )
         return result
-
-    def save_results(self, save_path, reconVol_separate):
-        """
-        red = np.zeros((3, 256), dtype="uint8")
-        red[0] = np.arange(256, dtype="uint8")
-
-        green = np.zeros((3, 256), dtype="uint8")
-        green[1] = np.arange(256, dtype="uint8")
-        """
-
-        ijtags = imagej_metadata_tags(
-            {"LUTs": [red, orange]},
-            ">",
-        )
-
-        tifffile.imwrite(
-            save_path,
-            reconVol_separate,
-            byteorder=">",
-            imagej=True,
-            metadata={"mode": "composite"},
-            extratags=ijtags,
-            compression="zlib",
-            compressionargs={"level": 8},
-        )
 
     def dualViewFusion(self, topF, bottomF, segMask):
         print("to GPU...")
@@ -586,38 +693,31 @@ class FUSE_illu:
 
     def extractNSCTF(self, s, m, n, topVol, bottomVol):
         r = self.train_params["resample_ratio"]
-        featureExtrac = NSCTdec(levels=[3, 3, 3], device=self.train_params["device"])
+        device = self.train_params["device"]
+        featureExtrac = NSCTdec(levels=[3, 3, 3], device=device).to(device)
         topSTD = np.empty((m, s, n), dtype=np.float32)
         bottomSTD = np.empty((m, s, n), dtype=np.float32)
-        tmp0, tmp1 = np.arange(0, s, 10), np.arange(10, s + 10, 10)
+        tmp0, tmp1 = np.arange(0, s, 1), np.arange(1, s + 1, 1)
         for p, q in tqdm.tqdm(zip(tmp0, tmp1), desc="NSCT: ", total=len(tmp0)):
-            topDataFloat, bottomDataFloat = topVol[p:q, :, :].astype(
-                np.float32
-            ), bottomVol[p:q, :, :].astype(np.float32)
-            topDataGPU, bottomDataGPU = torch.from_numpy(
-                topDataFloat[:, None, :, :]
-            ).to(self.train_params["device"]), torch.from_numpy(
-                bottomDataFloat[:, None, :, :]
-            ).to(
-                self.train_params["device"]
-            )
+            topDataFloat = topVol[p:q, :, :].astype(np.float32)
+            bottomDataFloat = bottomVol[p:q, :, :].astype(np.float32)
 
             a, b, c = featureExtrac.nsctDec(
-                topDataGPU,
+                topDataFloat,
                 r,
                 _forFeatures=True,
             )
 
-            topSTD[:, p:q, :] = c.cpu().detach().numpy().transpose(1, 0, 2)
+            topSTD[:, p:q, :] = c.transpose(1, 0, 2)
 
             a[:], b[:], c[:] = featureExtrac.nsctDec(
-                bottomDataGPU,
+                bottomDataFloat,
                 r,
                 _forFeatures=True,
             )
-            bottomSTD[:, p:q, :] = c.cpu().detach().numpy().transpose(1, 0, 2)
+            bottomSTD[:, p:q, :] = c.transpose(1, 0, 2)
 
-            del topDataFloat, bottomDataFloat, topDataGPU, bottomDataGPU, a, b, c
+            del topDataFloat, bottomDataFloat, a, b, c
         gc.collect()
         return topSTD, bottomSTD
 
@@ -639,10 +739,15 @@ class FUSE_illu:
         topSegMask = np.zeros((s, m, n), dtype=bool)
         bottomSegMask = np.zeros((s, m, n), dtype=bool)
         l_temp = signal.savgol_filter(
-            ((topVol + 0.0 + bottomVol) > (th_top + th_bottom)).sum(1), 11, 1, axis=0
+            ((topVol + 0.0 + bottomVol) > (th_top + th_bottom)).sum(1),
+            11,
+            1,
+            axis=0,
         )
         l_all = signal.savgol_filter(
-            ((topVol + 0.0 + bottomVol) > (th_top + th_bottom)).sum((1, 2)), 11, 1
+            ((topVol + 0.0 + bottomVol) > (th_top + th_bottom)).sum((1, 2)),
+            11,
+            1,
         )
         l_all = scipy.signal.find_peaks(l_all, height=l_all.max() / 10)[0]
         c_all = min(l_all[0] + 1 if len(l_all) > 0 else s // 2, s // 2)
@@ -742,7 +847,7 @@ class FUSE_illu:
             f"OTSU threshold = {thvol:.1f}"
         )
         np.save(
-            save_path + "/info.npy",
+            save_path,
             {
                 **{
                     "thvol": thvol,
@@ -853,3 +958,24 @@ def fusionResult(
             )
         recon[ind] = a
     return recon
+
+
+if __name__ == "__main__":
+    model = FUSE_illu(require_segmentation=False)
+
+    A = tifffile.imread(
+        "D:/embryo/R0/V000_R0000_X000_Y000_C02_I1_D0_P00182.tif"
+    ).transpose(0, 2, 1)
+    B = tifffile.imread(
+        "D:/embryo/R0/V000_R0000_X000_Y000_C02_I0_D0_P00182.tif"
+    ).transpose(0, 2, 1)
+
+    model.train(
+        data_path="D:/embryo/R0",
+        left_illu_data=A,
+        right_illu_data=B,
+        sparse_sample=True,
+        save_path="C:/Users/yu/Downloads",
+        save_folder="illu_fuse",
+        display=False,
+    )
