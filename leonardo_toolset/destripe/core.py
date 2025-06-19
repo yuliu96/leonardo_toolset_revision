@@ -461,10 +461,10 @@ class DeStripe:
     ):
 
         if x is not None:
-            if (illu_orient == None) and (is_vertical == None):
+            if (illu_orient is None) and (is_vertical is None):
                 print("is_vertical and illu_orient cannot be missing at the same time.")
                 return
-            elif illu_orient == None:
+            elif illu_orient is None:
                 print(
                     "warning: illumination orientation is not given. post-processing will be ignored."
                 )
