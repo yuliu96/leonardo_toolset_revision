@@ -204,8 +204,7 @@ class DeStripe:
             sample_params["angle_offset_individual"],
             backend=backend,
         )
-        np.save("X.npy", np.asarray(X) if backend == "jax" else X.cpu().data.numpy())
-        np.save("Y.npy", Y_GU)
+
         if len(sample_params["illu_orient"]) > 0:
             Y = post_process_module(
                 np.asarray(X) if backend == "jax" else X.cpu().data.numpy(),
