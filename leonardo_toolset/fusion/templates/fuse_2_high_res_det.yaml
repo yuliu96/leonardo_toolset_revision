@@ -3,7 +3,7 @@ Inputs:
   dorsal_det_data: "{{dorsal_det_data}}"            
 
 metadata:
-  "fusion type": "fusion along detection with dowsample"
+  "fusion type": "fusion along detection with downsample"
   require_flipping_along_illu_for_dorsaldet: "{{require_flipping_along_illu_for_dorsaldet}}"  
   require_flipping_along_det_for_dorsaldet: "{{require_flipping_along_det_for_dorsaldet}}"                  
   require_registration: "{{require_registration}}"
