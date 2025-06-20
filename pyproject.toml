@@ -22,12 +22,10 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 dependencies = [
-    "numpy<2.0",
-    "jax[cuda]",
+    "jax",
     "scikit-image",
     "torch",
     "torchvision",
-    "aicsimageio",
     "tqdm",
     "matplotlib",
     "dm-haiku",
@@ -40,6 +38,10 @@ dependencies = [
     "colour",
     "open3d",
     "h5py",
+    "bioio",
+    "bioio-tifffile",
+    "jinja2",
+    "pyyaml",
 ]
 
 [project.optional-dependencies]
@@ -102,7 +104,7 @@ package-dir = {"" = "."}
 where = ["."]
 
 [tool.setuptools.package-data]
-leonardo_toolset = []
+leonardo_toolset = ["**/*.yaml"]
 
 [tool.flake8]
 exclude = "docs/"

@@ -423,7 +423,8 @@ class DeStripeModel_jax(hk.Module):
     ):
         Xf = self.p(Xf)  # (M*N, 2,)
         Xf_tvx = self.gnn(Xf)
-        X_fourier = self.merge(self.tv_uint(Xf_tvx, Xf))
+        # X_fourier = self.merge(self.tv_uint(Xf_tvx, Xf))
+        X_fourier = self.merge(Xf_tvx)[0]
         outputGNNraw = self.fourierResult(X_fourier[..., 0], aver)
         alpha = hk.get_parameter(
             "alpha",
