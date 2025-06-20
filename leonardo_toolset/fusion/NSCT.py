@@ -6,30 +6,78 @@ import numpy as np
 import scipy.io as scipyio
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
-class NSCTdec:
+class NSCTdec(nn.Module):
     def __init__(self, levels, device):
+        super().__init__()
         self.device = device
         self.levels = levels
         self.max_filter = nn.MaxPool2d((9, 9), stride=(1, 1), padding=(4, 4))
         self.dKernel = torch.ones(1, 1, 3, 3).to(self.device) / 9
         self.stdpadding = nn.ReflectionPad2d((1, 1, 1, 1))
-        filters = {}
+
         h1, h2 = self.dfilters()
-        filters["0"] = (
-            torch.from_numpy(self.modulate2(h1, "c")[None, None, :, :])
-            .float()
-            .to(self.device)
+        self.register_buffer(
+            "level_0_0",
+            torch.from_numpy(self.modulate2(h1, "c")[None, None, :, :]).float(),
         )
-        filters["1"] = (
-            torch.from_numpy(self.modulate2(h2, "c")[None, None, :, :])
-            .float()
-            .to(self.device)
+        self.register_buffer(
+            "level_0_1",
+            torch.from_numpy(self.modulate2(h2, "c")[None, None, :, :]).float(),
         )
-        filters["2"], filters["3"] = self.parafilters(h1, h2)
+
+        level_1_0, level_1_1 = self.modulate_kernel(
+            self.level_0_0,
+            self.level_0_1,
+            np.array([[1, -1], [1, 1]]),
+        )
+
+        self.register_buffer("level_1_0", level_1_0)
+        self.register_buffer("level_1_1", level_1_1)
+
+        f1, f2 = self.parafilters(h1, h2)
+
+        for l in range(3, max(levels) + 1):
+            level_0, level_1 = [], []
+            for k in range(1, 2 ** (l - 2) + 1):
+                slk = 2 * math.floor((k - 1) / 2) - 2 ** (l - 3) + 1
+                mkl = 2 * np.matmul(
+                    np.array([[2 ** (l - 3), 0], [0, 1]]),
+                    np.array([[1, 0], [-slk, 1]]),
+                )
+                i = (k - 1) % 2 + 1
+                kernel_1, kernel_2 = self.modulate_kernel(
+                    f1["{}".format(i - 1)],
+                    f2["{}".format(i - 1)],
+                    mkl,
+                )
+                level_0.append(kernel_1)
+                level_1.append(kernel_2)
+            for k in range(2 ** (l - 2) + 1, 2 ** (l - 1) + 1):
+                slk = 2 * math.floor((k - 2 ** (l - 2) - 1) / 2) - 2 ** (l - 3) + 1
+                mkl = 2 * np.matmul(
+                    np.array([[1, 0], [0, 2 ** (l - 3)]]),
+                    np.array([[1, -slk], [0, 1]]),
+                )
+                i = (k - 1) % 2 + 3
+                kernel_1, kernel_2 = self.modulate_kernel(
+                    f1["{}".format(i - 1)],
+                    f2["{}".format(i - 1)],
+                    mkl,
+                )
+                level_0.append(kernel_1)
+                level_1.append(kernel_2)
+
+            level_0 = torch.cat(level_0, 0)
+            # level_0 = level_0.repeat(1, level_0.shape[0], 1, 1)
+            level_1 = torch.cat(level_1, 0)
+            # level_1 = level_1.repeat(1, level_1.shape[0], 1, 1)
+            self.register_buffer("level_{}_0".format(l - 1), level_0)
+            self.register_buffer("level_{}_1".format(l - 1), level_1)
+
         self.h1, self.h2 = self.atrousfilters()
-        self.filters = filters
 
     def atrousfilters(self):
         A = np.array(
@@ -177,71 +225,81 @@ class NSCTdec:
             -1,
         )
 
-    def nsdfbdec(self, x, dfilter, clevels):
-        k1, k2, f1, f2 = dfilter["0"], dfilter["1"], dfilter["2"], dfilter["3"]
-        q1 = np.array([[1, -1], [1, 1]])
+    def nsdfbdec(self, x, clevels):
+        H, W = x.shape[-2:]
         if clevels == 1:
-            y = self.nssfbdec(x, k1, k2)
+            y = torch.cat((self.nssfbdec(x, self.level_0_0, self.level_0_1)), 1)
         else:
-            tmp = self.nssfbdec(x, k1, k2)
-            x1, x2 = tmp[:, 0:1, :, :], tmp[:, 1:2, :, :]
+            x1, x2 = self.nssfbdec(x, self.level_0_0, self.level_0_1)
             y = torch.cat(
-                (self.nssfbdec(x1, k1, k2, q1), self.nssfbdec(x2, k1, k2, q1)), 1
+                (
+                    *self.nssfbdec(x1, self.level_1_0, self.level_1_1),
+                    *self.nssfbdec(x2, self.level_1_0, self.level_1_1),
+                ),
+                1,
             )
             for l in range(3, clevels + 1):
-                y_old = y
-                y = torch.zeros(
-                    x.size()[0], 2**l, y_old.size()[2], y_old.size()[3]
-                ).to(self.device)
-                for k in range(1, 2 ** (l - 2) + 1):
-                    slk = 2 * math.floor((k - 1) / 2) - 2 ** (l - 3) + 1
-                    mkl = 2 * np.matmul(
-                        np.array([[2 ** (l - 3), 0], [0, 1]]),
-                        np.array([[1, 0], [-slk, 1]]),
-                    )
-                    i = (k - 1) % 2 + 1
-                    y[:, 2 * k - 2 : 2 * k, :, :] = self.nssfbdec(
-                        y_old[:, k - 1 : k, :, :],
-                        f1["{}".format(i - 1)],
-                        f2["{}".format(i - 1)],
-                        mkl,
-                    )
-                for k in range(2 ** (l - 2) + 1, 2 ** (l - 1) + 1):
-                    slk = 2 * math.floor((k - 2 ** (l - 2) - 1) / 2) - 2 ** (l - 3) + 1
-                    mkl = 2 * np.matmul(
-                        np.array([[1, 0], [0, 2 ** (l - 3)]]),
-                        np.array([[1, -slk], [0, 1]]),
-                    )
-                    i = (k - 1) % 2 + 3
-                    y[:, 2 * k - 2 : 2 * k, :, :] = self.nssfbdec(
-                        y_old[:, k - 1 : k, :, :],
-                        f1["{}".format(i - 1)],
-                        f2["{}".format(i - 1)],
-                        mkl,
-                    )
+                y = torch.cat(
+                    (
+                        self.conv_perext(y, getattr(self, f"level_{l-1}_0")),
+                        self.conv_perext(y, getattr(self, f"level_{l-1}_1")),
+                    ),
+                    1,
+                )
         return y
 
-    def nssfbdec(self, x, f1, f2, mup="None"):
-        if isinstance(mup, str):
-            return torch.cat((self.efilter2(x, f1), self.efilter2(x, f2)), 1)
-        if isinstance(mup, int):
-            if mup == 1:
-                return torch.cat((self.efilter2(x, f1), self.efilter2(x, f2)), 1)
-        if sum(sum(mup == np.eye(2))) == 4:
-            return torch.cat((self.efilter2(x, f1), self.efilter2(x, f2)), 1)
-        if mup.shape == (2, 2):
-            return torch.cat((self.zconv2(x, f1, mup), self.zconv2(x, f2, mup)), 1)
+    def modulate_kernel_fft(self, h1, h2, H, W, m="None"):
+        if isinstance(m, np.ndarray) and (sum(sum(m == np.eye(2))) != 4):
+            h1 = (
+                self.rot45(h1)
+                if sum(sum(m == np.array([[1, -1], [1, 1]]))) == 4
+                else self.my_upsamp2df(h1, m)
+            )
+            h2 = (
+                self.rot45(h2)
+                if sum(sum(m == np.array([[1, -1], [1, 1]]))) == 4
+                else self.my_upsamp2df(h2, m)
+            )
+        h1_padded = torch.zeros((1, 1, H, W), dtype=h1.dtype, device=h1.device)
+        h1_padded[..., : h1.shape[-2], : h1.shape[-1]] = h1
 
-    def zconv2(self, x, h, m):
-        h0 = (
-            self.rot45(h)
-            if sum(sum(m == np.array([[1, -1], [1, 1]]))) == 4
-            else self.my_upsamp2df(h, m)
+        h2_padded = torch.zeros((1, 1, H, W), dtype=h2.dtype, device=h2.device)
+        h2_padded[..., : h2.shape[-2], : h2.shape[-1]] = h2
+
+        return torch.cat(
+            (
+                torch.fft.rfft2(h1_padded, dim=(-2, -1)),
+                torch.fft.rfft2(h2_padded, dim=(-2, -1)),
+            ),
+            1,
         )
-        return torch.conv2d(self.perext(x, h0.size(-2) // 2, h0.size(-1) // 2), h0)
 
-    def efilter2(self, x, f):
-        return torch.conv2d(self.perext(x, f.size(-2) // 2, f.size(-1) // 2), f)
+    def nssfbdec(self, x, f1, f2):
+        # f1 = self.modulate_kernel(f1, mup)
+        # f2 = self.modulate_kernel(f2, mup)
+        return self.conv_perext(x, f1), self.conv_perext(x, f2)
+
+    def conv_perext(self, x, f):
+        return torch.conv2d(
+            self.perext(x, f.size(-2) // 2, f.size(-1) // 2),
+            f,
+            groups=x.shape[1],
+        )
+
+    def modulate_kernel(self, h1, h2, m="None"):
+        if isinstance(m, np.ndarray) and (sum(sum(m == np.eye(2))) != 4):
+            h1 = (
+                self.rot45(h1)
+                if sum(sum(m == np.array([[1, -1], [1, 1]]))) == 4
+                else self.my_upsamp2df(h1, m)
+            )
+
+            h2 = (
+                self.rot45(h2)
+                if sum(sum(m == np.array([[1, -1], [1, 1]]))) == 4
+                else self.my_upsamp2df(h2, m)
+            )
+        return h1, h2
 
     def rot45(self, h0):
         h = torch.zeros(1, 1, 2 * h0.size()[-2] - 1, 2 * h0.size()[-1] - 1).to(
@@ -267,8 +325,7 @@ class NSCTdec:
         return torch.matmul(torch.matmul(R1, h0), R2)
 
     def perext(self, x, er, ec):
-        x = torch.cat((x[:, :, -er:, :], x, x[:, :, :er, :]), -2)
-        return torch.cat((x[:, :, :, -ec:], x, x[:, :, :, :ec]), -1)
+        return F.pad(x, (ec, ec, er, er), "circular")
 
     def extractFeatures(self, x):
         b, _, m, n = x[0].size()
@@ -278,16 +335,23 @@ class NSCTdec:
             f += torch.sum(d.abs(), dim=1, keepdim=True)
         return f / L
 
+    @torch.no_grad()
     def nsctDec(self, x, stride=None, _forFeatures=False):
+        if isinstance(x, np.ndarray):
+            x = torch.from_numpy(x).to(self.device)
+        if x.ndim == 3:
+            x = x[:, None, ...]
         clevels, nIndex = len(self.levels), len(self.levels) + 1
         y = []
         for i in range(1, clevels + 1):
             xlo, xhi = self.nsfbdec(x, self.h1, self.h2, i - 1)
             if self.levels[nIndex - 2] > 0:
-                xhi_dir = self.nsdfbdec(xhi, self.filters, self.levels[nIndex - 2])
+                xhi_dir = self.nsdfbdec(xhi, self.levels[nIndex - 2])
                 y.append(xhi_dir)
+
             else:
                 y.append(xhi)
+
             nIndex = nIndex - 1
             x = xlo
         if _forFeatures:
@@ -301,413 +365,29 @@ class NSCTdec:
                 self.stdpadding(df).unfold(2, 3, 1).unfold(3, 3, 1).std(dim=(-2, -1))
             )
             del f, x
-            return df[:, 0, :, :], dfbase[:, 0, :, :], dfstd[:, 0, :, :]
+            return (
+                df[:, 0, :, :].cpu().data.numpy(),
+                dfbase[:, 0, :, :].cpu().data.numpy(),
+                dfstd[:, 0, :, :].cpu().data.numpy(),
+            )
         else:
             return y, x
 
 
-class NSCTrec:
-    def __init__(self, levels, device):
-        self.device = device
-        self.levels = levels
-        h1, h2 = self.dfilters()
-        filters = {}
-        filters["0"] = (
-            torch.from_numpy(self.modulate2(h1, "c")[None, None, :, :])
-            .float()
-            .to(self.device)
-        )
-        filters["1"] = (
-            torch.from_numpy(self.modulate2(h2, "c")[None, None, :, :])
-            .float()
-            .to(self.device)
-        )
-        filters["2"], filters["3"] = self.parafilters(h1, h2)
-        self.g1, self.g2 = self.atrousfilters()
-        self.filters = filters
+# import time
 
-    def nssfbrec(self, x1, x2, f1, f2, mup="None"):
-        if isinstance(mup, str):
-            y1, y2 = self.efilter2(x1, f1), self.efilter2(x2, f2)
-            return y1 + y2
-        if sum(sum(mup == np.eye(2))) == 4:
-            y1, y2 = self.efilter2(x1, f1), self.efilter2(x2, f2)
-            return y1 + y2
-        if isinstance(mup, int):
-            if mup == 1:
-                y1, y2 = self.efilter2(x1, f1), self.efilter2(x2, f2)
-                return y1 + y2
-            else:
-                mup = mup * np.eye(2)
-                y1, y2 = self.zconv2S(x1, f1, mup), self.zconv2S(x2, f2, mup)
-                return y1 + y2
-        if mup.shape == (2, 2):
-            y1, y2 = self.zconv2(x1, f1, mup), self.zconv2(x2, f2, mup)
-            return y1 + y2
+# a = torch.from_numpy(np.random.rand(10, 1, 2048, 2048)).cuda().to(torch.float)
+# model = NSCTdec(
+#     levels=[3, 3, 3],
+#     device="cuda",
+# ).cuda()
+# aa = time.time()
+# for i in range(10):
+#     y = model.nsctDec(a[i : i + 1], stride=2, _forFeatures=True)
+# bb = time.time()
+# print(bb - aa)
 
-    def zconv2(self, x, h, m):
-        h0 = (
-            self.rot45(h)
-            if sum(sum(m == np.array([[1, -1], [1, 1]]))) == 4
-            else self.my_upsamp2df(h, m)
-        )
-        return torch.conv2d(self.perext(x, h0.size(-2) // 2, h0.size(-1) // 2), h0)
+# # model = NSCTrec(levels=[3, 3, 3], device="cuda")
+# # z = model.nsctRec(y, x)
 
-    def my_upsamp2df(self, h0, mup):
-        m, n = h0.size()[-2:]
-        power = math.log2(mup[0, 0])
-        R1, R2 = torch.zeros((1, 1, int(2**power * (m - 1) + 1), m)).to(
-            self.device
-        ), torch.zeros((1, 1, n, int(2**power * (n - 1) + 1))).to(self.device)
-        for i in range(1, m + 1):
-            R1[:, :, int((i - 1) * 2 ** (power)), i - 1] = 1
-        for i in range(1, n + 1):
-            R2[:, :, i - 1, int((i - 1) * 2 ** (power))] = 1
-        return torch.matmul(torch.matmul(R1, h0), R2)
-
-    def efilter2(self, x, f):
-        return torch.conv2d(self.perext(x, f.size(-2) // 2, f.size(-1) // 2), f)
-
-    def perext(self, x, er, ec):
-        x = torch.cat((x[:, :, -er:, :], x, x[:, :, :er, :]), -2)
-        return torch.cat((x[:, :, :, -ec:], x, x[:, :, :, :ec]), -1)
-
-    def rot45(self, h0):
-        h = torch.zeros(1, 1, 2 * h0.size()[-2] - 1, 2 * h0.size()[-1] - 1).to(
-            self.device
-        )
-        sz1, sz2 = h0.size()[-2:]
-        for i in range(1, sz1 + 1):
-            r, c = i + np.arange(0, sz2, 1), sz2 - i + np.arange(1, sz2 + 1, 1)
-            for j in range(1, sz2 + 1):
-                h[:, :, r[j - 1] - 1, c[j - 1] - 1] = h0[:, :, i - 1, j - 1]
-        return h
-
-    def nsdfbrec(self, x, dfilter):
-        clevels = math.log2(x.size()[1])
-        if clevels == 0:
-            return x
-        k1, k2, f1, f2 = dfilter["0"], dfilter["1"], dfilter["2"], dfilter["3"]
-        q1 = np.array([[1, -1], [1, 1]])
-        if clevels == 1:
-            y = self.nssfbrec(x[:, 0:1, :, :], x[:, 1:2, :, :], k1, k2)
-        else:
-            for l in range(int(clevels), 3 - 1, -1):
-                for k in range(1, 2 ** (l - 2) + 1):
-                    slk = 2 * math.floor((k - 1) / 2) - 2 ** (l - 3) + 1
-                    mkl = np.matmul(
-                        2 * np.array([[2 ** (l - 3), 0], [0, 1]]),
-                        np.array([[1, 0], [-slk, 1]]),
-                    )
-                    i = (k - 1) % 2 + 1
-                    x[:, k - 1 : k, :, :] = self.nssfbrec(
-                        x[:, 2 * k - 2 : 2 * k - 1, :, :],
-                        x[:, 2 * k - 1 : 2 * k, :, :],
-                        f1[str(i - 1)],
-                        f2[str(i - 1)],
-                        mkl,
-                    )
-                for k in range(2 ** (l - 2) + 1, 2 ** (l - 1) + 1):
-                    slk = 2 * math.floor((k - 2 ** (l - 2) - 1) / 2) - 2 ** (l - 3) + 1
-                    mkl = np.matmul(
-                        2 * np.array([[1, 0], [0, 2 ** (l - 3)]]),
-                        np.array([[1, -slk], [0, 1]]),
-                    )
-                    i = (k - 1) % 2 + 3
-                    x[:, k - 1 : k, :, :] = self.nssfbrec(
-                        x[:, 2 * k - 2 : 2 * k - 1, :, :],
-                        x[:, 2 * k - 1 : 2 * k, :, :],
-                        f1[str(i - 1)],
-                        f2[str(i - 1)],
-                        mkl,
-                    )
-            x[:, 0:1, :, :] = self.nssfbrec(
-                x[:, 0:1, :, :], x[:, 1:2, :, :], k1, k2, q1
-            )
-            x[:, 1:2, :, :] = self.nssfbrec(
-                x[:, 2:3, :, :], x[:, 3:4, :, :], k1, k2, q1
-            )
-            y = self.nssfbrec(x[:, 0:1, :, :], x[:, 1:2, :, :], k1, k2)
-        return y
-
-    def nsfbrec(self, y0, y1, g0, g1, lev):
-        I2 = np.eye(2)
-        if lev != 0:
-            shift = -(2 ** (lev - 1)) * np.array([1, 1]) + 2
-            L = 2**lev
-            x = torch.conv2d(
-                self.symext(
-                    y0,
-                    (2 ** (lev - 1)) * (g0.size(-2) - 1),
-                    (2 ** (lev - 1)) * (g0.size(-1) - 1),
-                ),
-                g0,
-                dilation=L,
-            ) + torch.conv2d(
-                self.symext(
-                    y1,
-                    (2 ** (lev - 1)) * (g1.size(-2) - 1),
-                    (2 ** (lev - 1)) * (g1.size(-1) - 1),
-                ),
-                g1,
-                dilation=L,
-            )
-        else:
-            shift = np.array([1, 1])
-            x = torch.conv2d(
-                self.symext(y0, g0.size(-2) // 2, g0.size(-1) // 2), g0
-            ) + torch.conv2d(self.symext(y1, g1.size(-2) // 2, g1.size(-1) // 2), g1)
-        return x
-
-    def symext(self, x, er, ec):
-        x = torch.cat(
-            (torch.flip(x[:, :, :er, :], [-2]), x, torch.flip(x[:, :, -er:, :], [-2])),
-            -2,
-        )
-        return torch.cat(
-            (torch.flip(x[:, :, :, :ec], [-1]), x, torch.flip(x[:, :, :, -ec:], [-1])),
-            -1,
-        )
-
-    def nsctRec(self, y, x):
-        y = y[::-1]
-        n = len(y)
-        xlo = copy.deepcopy(x)
-        nIndex = n - 1
-        for i in range(1, n + 1):
-            if y[i - 1].size()[1] != 1:
-                xhi = self.nsdfbrec(y[i - 1], self.filters)
-            else:
-                xhi = y[i - 1]
-            x = self.nsfbrec(xlo, xhi, self.g1, self.g2, nIndex)
-            xlo = x
-            nIndex = nIndex - 1
-        return x
-
-    def atrousfilters(self):
-        A = np.array(
-            [
-                [
-                    -1.67551636e-04,
-                    -1.00530982e-03,
-                    -2.51327454e-03,
-                    -3.35103272e-03,
-                    -2.51327454e-03,
-                    -1.00530982e-03,
-                    -1.67551636e-04,
-                ],
-                [
-                    -1.00530982e-03,
-                    -5.24666309e-03,
-                    -1.19388640e-02,
-                    -1.53950215e-02,
-                    -1.19388640e-02,
-                    -5.24666309e-03,
-                    -1.00530982e-03,
-                ],
-                [
-                    -2.51327454e-03,
-                    -1.19388640e-02,
-                    6.76941007e-02,
-                    1.54239380e-01,
-                    6.76941007e-02,
-                    -1.19388640e-02,
-                    -2.51327454e-03,
-                ],
-                [
-                    -3.35103272e-03,
-                    -1.53950215e-02,
-                    1.54239380e-01,
-                    3.32566738e-01,
-                    1.54239380e-01,
-                    -1.53950215e-02,
-                    -3.35103272e-03,
-                ],
-                [
-                    -2.51327454e-03,
-                    -1.19388640e-02,
-                    6.76941007e-02,
-                    1.54239380e-01,
-                    6.76941007e-02,
-                    -1.19388640e-02,
-                    -2.51327454e-03,
-                ],
-                [
-                    -1.00530982e-03,
-                    -5.24666309e-03,
-                    -1.19388640e-02,
-                    -1.53950215e-02,
-                    -1.19388640e-02,
-                    -5.24666309e-03,
-                    -1.00530982e-03,
-                ],
-                [
-                    -1.67551636e-04,
-                    -1.00530982e-03,
-                    -2.51327454e-03,
-                    -3.35103272e-03,
-                    -2.51327454e-03,
-                    -1.00530982e-03,
-                    -1.67551636e-04,
-                ],
-            ]
-        )
-        B = np.array(
-            [
-                [
-                    1.67551636e-04,
-                    1.00530982e-03,
-                    2.51327454e-03,
-                    3.35103272e-03,
-                    2.51327454e-03,
-                    1.00530982e-03,
-                    1.67551636e-04,
-                ],
-                [
-                    1.00530982e-03,
-                    -1.22542382e-03,
-                    -1.39494836e-02,
-                    -2.34375000e-02,
-                    -1.39494836e-02,
-                    -1.22542382e-03,
-                    1.00530982e-03,
-                ],
-                [
-                    2.51327454e-03,
-                    -1.39494836e-02,
-                    -6.76941007e-02,
-                    -1.02462685e-01,
-                    -6.76941007e-02,
-                    -1.39494836e-02,
-                    2.51327454e-03,
-                ],
-                [
-                    3.35103272e-03,
-                    -2.34375000e-02,
-                    -1.02462685e-01,
-                    8.48651695e-01,
-                    -1.02462685e-01,
-                    -2.34375000e-02,
-                    3.35103272e-03,
-                ],
-                [
-                    2.51327454e-03,
-                    -1.39494836e-02,
-                    -6.76941007e-02,
-                    -1.02462685e-01,
-                    -6.76941007e-02,
-                    -1.39494836e-02,
-                    2.51327454e-03,
-                ],
-                [
-                    1.00530982e-03,
-                    -1.22542382e-03,
-                    -1.39494836e-02,
-                    -2.34375000e-02,
-                    -1.39494836e-02,
-                    -1.22542382e-03,
-                    1.00530982e-03,
-                ],
-                [
-                    1.67551636e-04,
-                    1.00530982e-03,
-                    2.51327454e-03,
-                    3.35103272e-03,
-                    2.51327454e-03,
-                    1.00530982e-03,
-                    1.67551636e-04,
-                ],
-            ]
-        )
-        return torch.from_numpy(A)[None, None, :, :].float().to(
-            self.device
-        ), torch.from_numpy(B)[None, None, :, :].float().to(self.device)
-
-    def parafilters(self, f1, f2):
-        y1, y2 = {}, {}
-        y1["0"], y2["0"] = self.modulate2(f1, "r"), self.modulate2(f2, "r")
-        y1["1"], y2["1"] = self.modulate2(f1, "c"), self.modulate2(f2, "c")
-        y1["2"], y2["2"] = y1["0"].T, y2["0"].T
-        y1["3"], y2["3"] = y1["1"].T, y2["1"].T
-        for i in range(4):
-            y1["{}".format(i)] = (
-                torch.from_numpy(
-                    self.resampz(y1["{}".format(i)], i + 1)[None, None, :, :]
-                )
-                .float()
-                .to(self.device)
-            )
-            y2["{}".format(i)] = (
-                torch.from_numpy(
-                    self.resampz(y2["{}".format(i)], i + 1)[None, None, :, :]
-                )
-                .float()
-                .to(self.device)
-            )
-        return y1, y2
-
-    def resampz(self, x, sampleType):
-        shift, sx = 1, x.shape
-        if (sampleType == 1) or (sampleType == 2):
-            y = np.zeros((sx[0] + sx[1] - 1, sx[1]))
-            shift1 = (
-                -1 * np.arange(0, sx[1], 1, dtype=int)
-                if sampleType == 1
-                else np.arange(0, sx[1], 1, dtype=int)
-            )
-            if shift1[-1] < 0:
-                shift1 = shift1 - shift1[-1]
-            for n in range(sx[1]):
-                y[shift1[n] + np.arange(0, sx[0], 1, dtype=int), n] = x[:, n]
-            start, finish = 0, y.shape[0] - 1
-            while np.sum(np.abs(y[start, :])) == 0:
-                start = start + 1
-            while np.sum(np.abs(y[finish, :])) == 0:
-                finish = finish - 1
-            y = y[start : finish + 1, :]
-        else:
-            y = np.zeros((sx[0], sx[1] + sx[0] - 1))
-            shift2 = (
-                -1 * np.arange(0, sx[0], 1, dtype=int)
-                if sampleType == 3
-                else np.arange(0, sx[0], 1, dtype=int)
-            )
-            if shift2[-1] < 0:
-                shift2 = shift2 - shift2[-1]
-            for m in range(sx[0]):
-                y[m, shift2[m] + np.arange(0, sx[1], 1, dtype=int)] = x[m, :]
-            start, finish = 0, y.shape[1] - 1
-            while np.sum(np.abs(y[:, start])) == 0:
-                start = start + 1
-            while np.sum(np.abs(y[:, finish])) == 0:
-                finish = finish - 1
-            y = y[:, start : finish + 1]
-        return y
-
-    def dfilters(self):
-        A = np.array(
-            [
-                [-0.0, -0.0, -0.0625, -0.0, -0.0],
-                [-0.0, -0.125, 0.25, -0.125, -0.0],
-                [-0.0625, 0.25, 1.75, 0.25, -0.0625],
-                [-0.0, -0.125, 0.25, -0.125, -0.0],
-                [-0.0, -0.0, -0.0625, -0.0, -0.0],
-            ]
-        )
-        B = np.array(
-            [[-0.0, -0.125, -0.0], [-0.125, 0.5, -0.125], [-0.0, -0.125, -0.0]]
-        )
-        return A / math.sqrt(2), B / math.sqrt(2)
-
-    def modulate2(self, x, modulateType):
-        o = np.floor(np.array(x.shape) / 2) + 1
-        n1, n2 = (
-            np.arange(1, x.shape[0] + 1, 1) - o[0],
-            np.arange(1, x.shape[1] + 1, 1) - o[1],
-        )
-        if modulateType == "c":
-            m2 = (-1) ** n2
-            return x * np.repeat(m2[None, :], x.shape[0], axis=0)
-        elif modulateType == "r":
-            m1 = (-1) ** n1
-            return x * np.repeat(m1[:, None], x.shape[1], axis=1)
+# # print((z - a).abs().sum(), a.abs().sum())

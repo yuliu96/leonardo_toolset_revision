@@ -49,6 +49,7 @@ from leonardo_toolset.destripe.utils_torch import (
     initialize_cmplx_model_torch,
     update_torch,
 )
+from leonardo_toolset.destripe.post_processing import post_process_module
 
 
 class DeStripe:
@@ -193,7 +194,7 @@ class DeStripe:
                 targetd_bilinear,
             )
 
-        Y = GuidedFilterHRModel(
+        Y_GU = GuidedFilterHRModel(
             Y_raw,
             X,
             targetd,
@@ -203,6 +204,21 @@ class DeStripe:
             sample_params["angle_offset_individual"],
             backend=backend,
         )
+
+        if len(sample_params["illu_orient"]) > 0:
+            Y = post_process_module(
+                np.asarray(X) if backend == "jax" else X.cpu().data.numpy(),
+                Y_GU,
+                angle_offset_individual=sample_params["angle_offset_individual"],
+                fusion_mask=(
+                    np.asarray(fusion_mask)
+                    if backend == "jax"
+                    else fusion_mask.cpu().data.numpy()
+                ),
+                illu_orient=sample_params["illu_orient"],
+            )
+        else:
+            Y = 10**Y_GU
         return Y[0, 0], (
             10 ** np.asarray(target[0, 0])
             if backend == "jax"
@@ -223,6 +239,7 @@ class DeStripe:
         backend: str = "jax",
         flag_compose: bool = False,
         display_angle_orientation: bool = True,
+        illu_orient: str = None,
     ):
         if train_params is None:
             train_params = destripe_train_params()
@@ -242,12 +259,24 @@ class DeStripe:
             angle_offset_individual.append(angle_offset_dict["angle_offset"])
 
         r = copy.deepcopy(train_params["resample_ratio"])
+
+        illu_orient_new = []
+        for illu in illu_orient:
+            if illu in ["top", "left"]:
+                illu_orient_new.append("top")
+            elif illu in ["bottom", "right"]:
+                illu_orient_new.append("bottom")
+            elif illu in ["left-right", "top-bottom"]:
+                illu_orient_new.append("top-bottom")
+            else:
+                pass
         sample_params = {
             "is_vertical": is_vertical,
             "angle_offset": angle_offset,
             "angle_offset_individual": angle_offset_individual,
             "r": r,
             "non_positive": non_positive,
+            "illu_orient": illu_orient_new,
         }
         z, _, m, n = X.shape
         result = copy.deepcopy(X[:, 0, :, :])
@@ -419,22 +448,57 @@ class DeStripe:
 
     def train(
         self,
-        is_vertical: bool,
+        is_vertical: bool = None,
         x: Union[str, np.ndarray, da.core.Array] = None,
         mask: Union[str, np.ndarray, da.core.Array] = None,
         fusion_mask: Union[da.core.Array, np.ndarray] = None,
+        illu_orient: str = None,
         display: bool = False,
         display_angle_orientation: bool = False,
         non_positive: bool = False,
         **kwargs,
     ):
+
         if x is not None:
+            if (illu_orient is None) and (is_vertical is None):
+                print("is_vertical and illu_orient cannot be missing at the same time.")
+                return
+            elif illu_orient is None:
+                print(
+                    "warning: illumination orientation is not given. post-processing will be ignored."
+                )
+            else:
+                pass
+            if illu_orient is not None:
+                assert illu_orient in [
+                    "top",
+                    "bottom",
+                    "left",
+                    "right",
+                    "left-right",
+                    "top-bottom",
+                ], print(
+                    "illu_orient should be only top, bottom, left, right, left-right, or top-bottom."
+                )
+                if illu_orient in ["top", "bottom", "top-bottom"]:
+                    is_vertical_illu = True
+                else:
+                    is_vertical_illu = False
+                if is_vertical is not None:
+                    assert is_vertical == is_vertical_illu, print(
+                        "is_vertical should align with illu_orient."
+                    )
+                else:
+                    is_vertical = is_vertical_illu
+                illu_orient = [illu_orient]
+            else:
+                illu_orient = []
             print("Start DeStripe...\n")
             flag_compose = False
             X_handle = BioImage(x)
             X = X_handle.get_image_dask_data("ZYX", T=0, C=0)[:, None, ...]
         else:
-            print("Start DeStripe-FUSE...\n")
+            print("Start DeStripe-Fuse...\n")
             if fusion_mask is None:
                 print("fusion_mask cannot be missing.")
                 return
@@ -482,6 +546,29 @@ class DeStripe:
             assert len(angle_offset_dict) == fusion_mask.shape[1], print(
                 "angle offsets should be {} in total.".format(fusion_mask.shape[1])
             )
+            illu_orient = []
+            for key, item in kwargs.items():
+                if key.startswith("illu_orient_"):
+                    illu_orient.append(item)
+            if len(illu_orient) == 0:
+                print(
+                    "warning: illumination orientation is not given. post-processing will be ignored."
+                )
+            else:
+                assert len(illu_orient) == fusion_mask.shape[1], print(
+                    "illu_orient_ should be {} in total.".format(fusion_mask.shape[1])
+                )
+                for illu in illu_orient:
+                    if illu in ["top", "bottom", "top-bottom"]:
+                        is_vertical_illu = True
+                    else:
+                        is_vertical_illu = False
+                    if is_vertical is not None:
+                        assert is_vertical == is_vertical_illu, print(
+                            "is_vertical should align with illu_orient."
+                        )
+                    else:
+                        is_vertical = is_vertical_illu
 
         # training
         out = self.train_on_full_arr(
@@ -497,5 +584,6 @@ class DeStripe:
             backend=self.backend,
             flag_compose=flag_compose,
             display_angle_orientation=display_angle_orientation,
+            illu_orient=illu_orient,
         )
         return out
