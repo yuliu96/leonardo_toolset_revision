@@ -16,21 +16,13 @@ from jinja2 import Template
 import yaml
 import os
 from os.path import splitext
-from datetime import datetime
 from pathlib import Path
 from pathlib import PurePosixPath
-
 import gc
 import tifffile
-import yaml
-import os
 from bioio.writers import OmeTiffWriter
-
-import yaml
-import os
 from collections import OrderedDict
 from bioio import BioImage
-import dask.array as da
 import re
 from leonardo_toolset.fusion.NSCT import NSCTdec
 import ants
@@ -585,7 +577,7 @@ def volumeTranslate_compose(
     if save_path is not None:
         print("save...")
         if ".tif" == os.path.splitext(save_path)[1]:
-            if large_vol == False:
+            if large_vol is False:
                 tifffile.imwrite(save_path, commonData)
             else:
                 save_path_dat = os.path.splitext(save_path)[0] + ".dat"
@@ -972,8 +964,6 @@ def coarseRegistrationZX(
     ]
     numpy_affine_to_ants_transform(mass_translation_mat, dimension=2)
 
-    from skimage.transform import rescale
-
     front = ants.from_numpy(front.astype(np.float32))
     back = ants.from_numpy(back.astype(np.float32))
     front.set_spacing((z_spacing, xy_spacing))
@@ -1210,7 +1200,7 @@ def parse_yaml_illu(
         save_folder,
         file_name,
     )
-    output_dict = render_yaml_template(
+    _ = render_yaml_template(
         get_template_path("fuse_illu.yaml"),
         context,
         output_path=yaml_path,
@@ -1412,7 +1402,7 @@ def parse_yaml_det(
         context["top_dorsal_reg"] = context["top_dorsal_folder"] + "_reg.tif"
         context["bottom_dorsal_reg"] = context["bottom_dorsal_folder"] + "_reg.tif"
     elif (ventral_det_data is not None) and ((dorsal_det_data is not None)):
-        if (xy_downsample_ratio == None) and (z_downsample_ratio == None):
+        if (xy_downsample_ratio is None) and (z_downsample_ratio is None):
             template_name = "fuse_2_det.yaml"
         else:
             template_name = "fuse_2_high_res_det.yaml"
@@ -1463,11 +1453,11 @@ def parse_yaml_det(
     context["sparse_sample"] = sparse_sample
     context["z_spacing"] = z_spacing if require_registration else "n.a."
     context["xy_spacing"] = xy_spacing if require_registration else "n.a."
-    if xy_downsample_ratio == None:
+    if xy_downsample_ratio is None:
         context["xy_downsample_ratio"] = "n.a."
     else:
         context["xy_downsample_ratio"] = xy_downsample_ratio
-    if z_downsample_ratio == None:
+    if z_downsample_ratio is None:
         context["z_downsample_ratio"] = "n.a."
     else:
         context["z_downsample_ratio"] = z_downsample_ratio
@@ -1477,7 +1467,7 @@ def parse_yaml_det(
         save_folder,
         file_name,
     )
-    output_dict = render_yaml_template(
+    _ = render_yaml_template(
         get_template_path(template_name),
         context,
         output_path=yaml_path,

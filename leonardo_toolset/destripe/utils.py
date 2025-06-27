@@ -1,7 +1,9 @@
 from typing import List
-
 import numpy as np
 import scipy
+import copy
+import math
+import torch
 
 try:
     import haiku as hk
@@ -12,11 +14,6 @@ try:
 except Exception as e:
     print(f"Error: {e}. Proceed without jax")
     pass
-
-import copy
-import math
-
-import torch
 
 
 def transform_cmplx_model(

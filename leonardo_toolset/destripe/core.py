@@ -1,34 +1,7 @@
 import warnings
-
-warnings.filterwarnings("ignore", message="ignoring keyword argument 'read_only'")
-
 from typing import Dict, Union
-
 import numpy as np
-
-try:
-    # import haiku as hk
-    import jax
-    import jax.numpy as jnp
-
-    from leonardo_toolset.destripe.loss_term_jax import Loss_jax
-    from leonardo_toolset.destripe.network_jax import DeStripeModel_jax
-    from leonardo_toolset.destripe.utils_jax import (
-        generate_mask_dict_jax,
-        initialize_cmplx_model_jax,
-        update_jax,
-    )
-
-    # from jax import jit
-    # import jaxwt
-
-    jax_flag = 1
-except Exception as e:
-    print(f"Error: {e}. process without jax")
-    jax_flag = 0
-
 import copy
-
 import dask.array as da
 import matplotlib.pyplot as plt
 import torch
@@ -50,6 +23,29 @@ from leonardo_toolset.destripe.utils_torch import (
     update_torch,
 )
 from leonardo_toolset.destripe.post_processing import post_process_module
+
+warnings.filterwarnings("ignore", message="ignoring keyword argument 'read_only'")
+
+try:
+    # import haiku as hk
+    import jax
+    import jax.numpy as jnp
+
+    from leonardo_toolset.destripe.loss_term_jax import Loss_jax
+    from leonardo_toolset.destripe.network_jax import DeStripeModel_jax
+    from leonardo_toolset.destripe.utils_jax import (
+        generate_mask_dict_jax,
+        initialize_cmplx_model_jax,
+        update_jax,
+    )
+
+    # from jax import jit
+    # import jaxwt
+
+    jax_flag = 1
+except Exception as e:
+    print(f"Error: {e}. process without jax")
+    jax_flag = 0
 
 
 class DeStripe:
@@ -87,11 +83,11 @@ class DeStripe:
         self.backend = backend
         if jax_flag == 0:
             if self.backend == "jax":
-                print("jax is not available on the current machine, use torch instead.")
+                print("jax not available on the current env, use torch instead.")
             self.backend = "torch"
 
-    ### INTERFACE ###
-    ## THIS FUNCTION IS CALLED FROM NAPARI. DO NOT USE IT DIRECTLY.
+    # ## INTERFACE ###
+    # # THIS FUNCTION IS CALLED FROM NAPARI. DO NOT USE IT DIRECTLY.
     @staticmethod
     def process(params: dict) -> None:
         """
@@ -136,10 +132,14 @@ class DeStripe:
     ):
         rng_seq = jax.random.PRNGKey(0) if backend == "jax" else None
         md = (
-            sample_params["md"] if sample_params["is_vertical"] else sample_params["nd"]
+            sample_params["md"]
+            if sample_params["is_vertical"]
+            else sample_params["nd"]  # noqa: E501
         )
         nd = (
-            sample_params["nd"] if sample_params["is_vertical"] else sample_params["md"]
+            sample_params["nd"]
+            if sample_params["is_vertical"]
+            else sample_params["md"]  # noqa: E501
         )
         target = (X * fusion_mask).sum(1, keepdims=True)
         targetd = target[:, :, :: sample_params["r"], :]

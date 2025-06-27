@@ -1,5 +1,43 @@
 import shutil
 from datetime import datetime
+import numpy as np
+import copy
+import os
+from typing import Union
+import dask.array as da
+import scipy
+import torch
+import torch.nn.functional as F
+from bioio import BioImage
+from scipy import signal
+import gc
+import matplotlib.patches as patches
+import matplotlib.pyplot as plt
+import tifffile
+import tqdm
+from skimage import morphology
+
+try:
+    from skimage import filters
+except ImportError:
+    from skimage import filter as filters
+
+from leonardo_toolset.fusion.NSCT import NSCTdec
+from leonardo_toolset.fusion.utils import (
+    EM2DPlus,
+    extendBoundary2,
+    fusion_perslice,
+    refineShape,
+    sgolay2dkernel,
+    waterShed,
+    parse_yaml_illu,
+    extract_leaf_file_paths_from_file,
+    read_with_bioio,
+)
+
+import pandas as pd
+
+pd.set_option("display.width", 10000)
 
 
 def make_Ramp(ramp_colors):
@@ -11,8 +49,6 @@ def make_Ramp(ramp_colors):
     )
     return color_ramp
 
-
-import numpy as np
 
 custom_ramp = make_Ramp(["#000000", "#D62728"])
 red = custom_ramp(range(256))[:, :-1] * 255
@@ -34,47 +70,6 @@ orange = orange.astype(np.uint8).T
 blue = blue.astype(np.uint8).T
 purple = purple.astype(np.uint8).T
 green = green.astype(np.uint8).T
-
-
-import pandas as pd
-
-pd.set_option("display.width", 10000)
-import copy
-import os
-from typing import Union
-
-import dask.array as da
-import scipy
-import torch
-import torch.nn.functional as F
-from bioio import BioImage
-from scipy import signal
-
-try:
-    from skimage import filters
-except ImportError:
-    from skimage import filter as filters
-
-import gc
-
-import matplotlib.patches as patches
-import matplotlib.pyplot as plt
-import tifffile
-import tqdm
-from skimage import morphology
-
-from leonardo_toolset.fusion.NSCT import NSCTdec
-from leonardo_toolset.fusion.utils import (
-    EM2DPlus,
-    extendBoundary2,
-    fusion_perslice,
-    refineShape,
-    sgolay2dkernel,
-    waterShed,
-    parse_yaml_illu,
-    extract_leaf_file_paths_from_file,
-    read_with_bioio,
-)
 
 
 class FUSE_illu:
@@ -577,7 +572,7 @@ class FUSE_illu:
                 sub_folder = os.path.join(save_path, self.sample_params[k])
             if not os.path.exists(sub_folder):
                 os.makedirs(sub_folder)"""
-        sub_folder = save_path
+        # sub_folder = save_path
 
         if cam_pos == "back":
             rawPlanes_top = rawPlanes_top[::-1, :, :]
