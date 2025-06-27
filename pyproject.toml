@@ -42,6 +42,7 @@ dependencies = [
     "bioio-tifffile",
     "jinja2",
     "pyyaml",
+    "bioio-ome-tiff",
 ]
 
 [project.optional-dependencies]
