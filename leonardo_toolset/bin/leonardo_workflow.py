@@ -11,7 +11,7 @@ import logging
 import sys
 import traceback
 
-from leonardo_toolset import workflow_wrapper, get_module_version
+from leonardo_toolset import get_module_version, workflow_wrapper
 
 ###############################################################################
 
