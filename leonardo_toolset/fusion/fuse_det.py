@@ -17,6 +17,7 @@ import matplotlib.patches as patches
 import tifffile
 import torch.nn.functional as F
 from skimage import morphology
+from dask.array import Array
 
 try:
     from skimage import filters
@@ -50,38 +51,6 @@ import pandas as pd
 pd.set_option("display.width", 10000)
 
 
-def make_Ramp(ramp_colors):
-    from colour import Color
-    from matplotlib.colors import LinearSegmentedColormap
-
-    color_ramp = LinearSegmentedColormap.from_list(
-        "my_list", [Color(c1).rgb for c1 in ramp_colors]
-    )
-    return color_ramp
-
-
-custom_ramp = make_Ramp(["#000000", "#D62728"])
-red = custom_ramp(range(256))[:, :-1] * 255
-
-custom_ramp = make_Ramp(["#000000", "#FF7F0E"])
-orange = custom_ramp(range(256))[:, :-1] * 255
-
-custom_ramp = make_Ramp(["#000000", "#17BECF"])
-blue = custom_ramp(range(256))[:, :-1] * 255
-
-custom_ramp = make_Ramp(["#000000", "#2CA02C"])
-green = custom_ramp(range(256))[:, :-1] * 255
-
-custom_ramp = make_Ramp(["#000000", "#9467BD"])
-purple = custom_ramp(range(256))[:, :-1] * 255
-
-red = red.astype(np.uint8).T
-orange = orange.astype(np.uint8).T
-blue = blue.astype(np.uint8).T
-purple = purple.astype(np.uint8).T
-green = green.astype(np.uint8).T
-
-
 def define_registration_params(
     use_exist_reg: bool = False,
     require_reg_finetune: bool = True,
@@ -89,11 +58,31 @@ def define_registration_params(
     lateral_downsample: int = 2,
     skip_refine_registration: bool = False,
 ):
+    """
+    Define and return registration parameters as a dictionary.
+
+    Args:
+        use_exist_reg (bool): Whether to use existing registration results.
+        require_reg_finetune (bool): Whether to perform fine-tuning registration.
+        axial_downsample (int): Downsampling factor along the axial direction.
+        lateral_downsample (int): Downsampling factor along the lateral direction.
+        skip_refine_registration (bool): Whether to skip fine registration (only for Leonardo-Fuse with downsample).
+
+    Returns:
+        dict: Registration parameters.
+    """
     kwargs = locals()
     return kwargs
 
 
 class FUSE_det:
+    """
+    Main class for Leonardo-Fuse (along detection).
+
+    This class handles the workflow for fusion in data with dual-sided detection (or mimicked by rotation)
+    and/or dual-sided illumination.
+    """
+
     def __init__(
         self,
         require_precropping: bool = True,
@@ -107,6 +96,46 @@ class FUSE_det:
         device: str = None,
         registration_params=None,
     ):
+        """
+        Initialize the FUSE_det class with training and registration parameters (if needed).
+
+        Args:
+            require_precropping : bool
+                Whether to perform pre-cropping before training.
+                If True, the model will automatically estimate a bounding box warping the foreground region based on which
+                to estimate the fusion boundary.
+            precropping_params : list of int
+                Manually define pre-cropping regions as [x_start, x_end, y_start, y_end].
+                regions outside will be considered as background and will not be considered for estimating the fusion boundary.
+            resample_ratio : int
+                Downsampling factor when estimating fusion boundaries.
+            window_size : list of int
+                The size of the Savitzky-Golay filter window as [z, xy].
+                `z` is the window size along the depth (z-axis),
+                and `xy` is the window size along the x/y plane.
+            poly_order : list of int
+                Polynomial order for the Savitzky-Golay filter in [z, xy] directions.
+            n_epochs : int
+                Number of optimization epochs for estimating fusion boundary.
+            require_segmentation : bool
+                Whether segmentation is required as part of the fusion pipeline.
+            skip_illuFusion : bool
+                Whether to skip Leonardo-Fuse (along illumination).
+                If True, the model will look for necessary files under `save_path` and `save_folder`
+                (as provided in the `train()` function). If the files are found, `FUSE_illu` will be skipped;
+                otherwise, it will be executed.
+            device : str
+                Target computation device, e.g., 'cuda' or 'cpu'. If None, defaults to available GPU.
+            registration_params : dict, optional
+                Optional dictionary to specify registration behavior.
+                Valid keys include:
+                - `use_exist_reg` (bool): Whether to use existing registration results.
+                - `require_reg_finetune` (bool): Whether to perform fine-tuning registration.
+                - `axial_downsample` (int): Downsampling factor along the axial direction.
+                - `lateral_downsample` (int): Downsampling factor along the lateral direction.
+                - `skip_refine_registration` (bool): Whether to skip fine registration (only for Leonardo-Fuse with downsample).
+        """
+
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.train_params = {
@@ -150,7 +179,15 @@ class FUSE_det:
         self,
         params: dict,
     ):
-        """Parses training parameters from dictionary"""
+        """
+        Train the fusion model using a parameter dictionary. Developped for the napari plugin.
+
+        Args:
+            params (dict): Dictionary containing all necessary parameters.
+
+        Returns:
+            np.ndarray: The fused output image.
+        """
         if params["method"] != "detection":
             raise ValueError(f"Invalid method: {params['method']}")
         if params["amount"] not in [2, 4]:
@@ -290,16 +327,16 @@ class FUSE_det:
         require_flipping_along_det_for_dorsaldet: bool,
         data_path: str = "",
         sparse_sample=False,
-        top_illu_ventral_det_data: Union[dask.array.core.Array, str] = None,
-        bottom_illu_ventral_det_data: Union[dask.array.core.Array, str] = None,
-        top_illu_dorsal_det_data: Union[dask.array.core.Array, str] = None,
-        bottom_illu_dorsal_det_data: Union[dask.array.core.Array, str] = None,
-        left_illu_ventral_det_data: Union[dask.array.core.Array, str] = None,
-        right_illu_ventral_det_data: Union[dask.array.core.Array, str] = None,
-        left_illu_dorsal_det_data: Union[dask.array.core.Array, str] = None,
-        right_illu_dorsal_det_data: Union[dask.array.core.Array, str] = None,
-        ventral_det_data: Union[dask.array.core.Array, str] = None,
-        dorsal_det_data: Union[dask.array.core.Array, str] = None,
+        top_illu_ventral_det_data: Union[Array, np.ndarray, str] = None,
+        bottom_illu_ventral_det_data: Union[Array, np.ndarray, str] = None,
+        top_illu_dorsal_det_data: Union[Array, np.ndarray, str] = None,
+        bottom_illu_dorsal_det_data: Union[Array, np.ndarray, str] = None,
+        left_illu_ventral_det_data: Union[Array, np.ndarray, str] = None,
+        right_illu_ventral_det_data: Union[Array, np.ndarray, str] = None,
+        left_illu_dorsal_det_data: Union[Array, np.ndarray, str] = None,
+        right_illu_dorsal_det_data: Union[Array, np.ndarray, str] = None,
+        ventral_det_data: Union[Array, np.ndarray, str, list[str]] = None,
+        dorsal_det_data: Union[Array, np.ndarray, str, list[str]] = None,
         save_path: str = "",
         save_folder: str = "",
         save_separate_results: bool = False,
@@ -310,6 +347,88 @@ class FUSE_det:
         z_downsample_ratio: int = None,
         display: bool = True,
     ):
+        """
+        Main training workflow for Leonardo-Fuse (along detection).
+
+        This function supports fusion of light sheet data acquired with dual-sided detection
+        (or mimicked by physical rotation) and/or dual-sided illumination.
+
+        Input fields should be populated accordingly:
+
+        - If fusion is required **only along the detection axis** (i.e., no illumination-side fusion is required),
+          provide `ventral_det_data` and `dorsal_det_data` only.
+        - If fusion **along the illumination axis** is also required:
+            - For light sheet systems with **top–bottom illumination** (in the image space), use `top_illu_*` and `bottom_illu_*`.
+            - For systems with **left–right illumination** (in the image space), use `left_illu_*` and `right_illu_*`.
+
+        Note:
+            There is big data mode with `FUSE_det` and can be enabled if either `z_downsample_ratio > 1` or `xy_downsample_ratio > 1`.
+            Currently, this mode is **only supported when `ventral_det_data` and `dorsal_det_data` are provided**.
+
+        Args:
+            require_registration : bool
+                Whether registration is needed.
+            require_flipping_along_illu_for_dorsaldet : bool
+                Whether to flip the data with dorsal detection along the illumination axis.
+                This is required to ensure alignment with the ventral view.
+            require_flipping_along_det_for_dorsaldet : bool
+                Whether to flip the data with dorsal detection along the detection (z) axis.
+                This is required to ensure alignment with the ventral view.
+            data_path : str, optional
+                Root directory to prepend when input data is provided as a relative path (str).
+                Ignored if inputs are arrays or lists of absolute paths.
+            top_illu_ventral_det_data : dask.array.Array | np.ndarray | str
+                Top illumination, ventral detection data.
+            bottom_illu_ventral_det_data : dask.array.Array | np.ndarray | str
+                Bottom illumination, ventral detection data.
+            top_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
+                Top illumination, dorsal detection data.
+            bottom_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
+                Bottom illumination, dorsal detection data.
+            left_illu_ventral_det_data : dask.array.Array | np.ndarray | str
+                Left illumination, ventral detection data.
+            right_illu_ventral_det_data : dask.array.Array | np.ndarray | str
+                Right illumination, ventral detection data.
+            left_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
+                Left illumination, dorsal detection data.
+            right_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
+                Right illumination, dorsal detection data.
+            ventral_det_data : dask.array.Array | np.ndarray | str | list[str]
+                Ventral detection data.
+                A list of absolute file paths can be used for the sake of image sequence.
+            dorsal_det_data : dask.array.Array | np.ndarray | str | list[str]
+                Dorsal detection data.
+                A list of absolute file paths can be used for the sake of image sequence.
+            save_path : str
+                Root path where output results will be saved.
+            save_folder : str
+                Name of the subfolder under `save_path` to save output files.
+            save_separate_results : bool, optional
+                Whether to save the fusion map as float32 files.
+                Set to `True` only if you plan to run Leonardo-DeStripe-Fuse afterward.
+            z_spacing : float
+                Voxel spacing along the axial (z) direction.
+                Required only if `require_registration` is True.
+            xy_spacing : float
+                Voxel spacing along the lateral (xy) plane.
+                Required only if `require_registration` is True.
+            left_right : bool
+                Whether the illumination direction is horizontal (True) or vertical (False) in the image space.
+                Only relevant when `ventral_det_data` and `dorsal_det_data` are used.
+            xy_downsample_ratio : int, optional
+                Downsampling factor applied in the lateral (xy) plane in big data mode.
+            z_downsample_ratio : int, optional
+                Downsampling factor applied along the axial (z) direction in big data mode.
+            display : bool, optional
+                Whether to visualize intermediate or final results using matplotlib.
+            sparse_sample : bool
+                Whether the specimen is mainly sparse structures.
+                If True, the fusion algorithm will adjust segmentation behavior.
+
+        Returns:
+            np.ndarray: The fused output image.
+        """
+
         if not os.path.exists(save_path):
             print("saving path does not exist.")
             return
@@ -472,6 +591,19 @@ class FUSE_det:
         data_path,
         save_path,
     ):
+        """
+        Save image stack(s) to a memory-mapped file.
+
+        Args:
+            all_images (list[str] or str): A list of absolute file paths for an image sequence,
+                or a single path to a multi-page image file.
+            data_path (str): Root directory used only when `all_images` is a relative file path (str).
+            save_path (str): Output path for the generated memmap file.
+
+        Returns:
+            np.memmap: Memory-mapped array of the saved image volume.
+        """
+
         if isinstance(all_images, list):
             sample_slice = tifffile.imread(all_images[0])
             Z, Y, X = len(all_images), sample_slice.shape[0], sample_slice.shape[1]
@@ -509,16 +641,16 @@ class FUSE_det:
         require_flipping_along_det_for_dorsaldet: bool,
         data_path: str = "",
         sparse_sample=False,
-        top_illu_ventral_det_data: Union[dask.array.core.Array, str] = None,
-        bottom_illu_ventral_det_data: Union[dask.array.core.Array, str] = None,
-        top_illu_dorsal_det_data: Union[dask.array.core.Array, str] = None,
-        bottom_illu_dorsal_det_data: Union[dask.array.core.Array, str] = None,
-        left_illu_ventral_det_data: Union[dask.array.core.Array, str] = None,
-        right_illu_ventral_det_data: Union[dask.array.core.Array, str] = None,
-        left_illu_dorsal_det_data: Union[dask.array.core.Array, str] = None,
-        right_illu_dorsal_det_data: Union[dask.array.core.Array, str] = None,
-        ventral_det_data: Union[dask.array.core.Array, str] = None,
-        dorsal_det_data: Union[dask.array.core.Array, str] = None,
+        top_illu_ventral_det_data: Union[Array, np.ndarray, str] = None,
+        bottom_illu_ventral_det_data: Union[Array, np.ndarray, str] = None,
+        top_illu_dorsal_det_data: Union[Array, np.ndarray, str] = None,
+        bottom_illu_dorsal_det_data: Union[Array, np.ndarray, str] = None,
+        left_illu_ventral_det_data: Union[Array, np.ndarray, str] = None,
+        right_illu_ventral_det_data: Union[Array, np.ndarray, str] = None,
+        left_illu_dorsal_det_data: Union[Array, np.ndarray, str] = None,
+        right_illu_dorsal_det_data: Union[Array, np.ndarray, str] = None,
+        ventral_det_data: Union[Array, np.ndarray, str] = None,
+        dorsal_det_data: Union[Array, np.ndarray, str] = None,
         save_path: str = "",
         save_folder: str = "",
         save_separate_results: bool = False,
@@ -528,6 +660,72 @@ class FUSE_det:
         display: bool = True,
         yaml_path: str = "",
     ):
+        """
+        Core fusion implementation for Leonardo-Fuse (along detection).
+
+        This function performs the actual fusion of dual-view light sheet data. It is
+        called internally by `train()`.
+
+        Args:
+            require_registration : bool
+                Whether registration is needed.
+            require_flipping_along_illu_for_dorsaldet : bool
+                Whether to flip the data with dorsal detection along the illumination axis.
+                This is required to ensure alignment with the ventral view.
+            require_flipping_along_det_for_dorsaldet : bool
+                Whether to flip the data with dorsal detection along the detection (z) axis.
+                This is required to ensure alignment with the ventral view.
+            data_path : str, optional
+                Root directory to prepend when input data is provided as a relative path (str).
+                Ignored if inputs are arrays or absolute paths.
+            sparse_sample : bool, optional
+                Whether the specimen is mainly sparse structures.
+                If True, influences segmentation behavior during fusion.
+            top_illu_ventral_det_data : dask.array.Array | np.ndarray | str
+                Top illumination, ventral detection data.
+            bottom_illu_ventral_det_data : dask.array.Array | np.ndarray | str
+                Bottom illumination, ventral detection data.
+            top_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
+                Top illumination, dorsal detection data.
+            bottom_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
+                Bottom illumination, dorsal detection data.
+            left_illu_ventral_det_data : dask.array.Array | np.ndarray | str
+                Left illumination, ventral detection data.
+            right_illu_ventral_det_data : dask.array.Array | np.ndarray | str
+                Right illumination, ventral detection data.
+            left_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
+                Left illumination, dorsal detection data.
+            right_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
+                Right illumination, dorsal detection data.
+            ventral_det_data : dask.array.Array | np.ndarray | str
+                Ventral detection data.
+            dorsal_det_data : dask.array.Array | np.ndarray | str
+                Dorsal detection data.
+            save_path : str
+                Root path where output results will be saved.
+            save_folder : str
+                Name of the subfolder under `save_path` to save output files.
+            save_separate_results : bool, optional
+                Whether to save the fusion map as float32 files.
+                Set to `True` only if you plan to run Leonardo-DeStripe-Fuse afterward.
+            z_spacing : float
+                Voxel spacing along the axial (z) direction.
+                Required only if `require_registration` is True.
+            xy_spacing : float
+                Voxel spacing along the lateral (xy) plane.
+                Required only if `require_registration` is True.
+            left_right : bool
+                Whether the illumination direction is horizontal (True) or vertical (False) in the image space.
+                Only relevant when `ventral_det_data` and `dorsal_det_data` are used.
+            display : bool, optional
+                Whether to visualize intermediate or final results using matplotlib.
+            yaml_path : str
+                Path to a YAML file for saving fusion metadata.
+
+        Returns:
+            np.ndarray: The fused 3D image volume.
+        """
+
         args = locals()
 
         for k in args:
@@ -961,6 +1159,29 @@ class FUSE_det:
         skip_refine_registration: bool = False,
         window_size=[5, 59],
     ):
+        """
+        Apply the registration and fusion to the high-resolution data in big data mode.
+
+        Args:
+            require_registration (bool): Whether registration is needed.
+            flip_axes: Axes to flip the data.
+            save_path (str): Path to save the output data.
+            save_folder (str): Folder name to save the output data.
+            ventral_det_data (np.ndarray): Ventral detection data.
+            dorsal_det_data (np.ndarray): Dorsal detection data.
+            T_flag (bool): Transpose flag for the data.
+            yaml_path (str): Path to the YAML file with configuration.
+            z_upsample_ratio (int): Downsampling ratio in big data mode for z dimension.
+            xy_upsample_ratio (int): Downsampling ratio in big data mode for xy dimensions.
+            save_separate_results (bool): Whether to save separate results.
+            z_spacing (int): Axial spacing.
+            xy_spacing (int): Lateral spacing.
+            skip_refine_registration (bool): Whether to skip refining the registration in full-resolution.
+            window_size (list): Window size for Savitzky-Golay filtering.
+
+        Returns:
+            list: List of file paths to be removed.
+        """
         if self.train_params["require_segmentation"]:
             _suffix = ""
         else:
@@ -1129,6 +1350,25 @@ class FUSE_det:
         T_flag,
         leaf_paths,
     ):
+        """
+        Perform coarse-to-fine registration for the dorsal detection data.
+
+        Args:
+            top_illu_dorsal_det_data: Top illumination dorsal detection data.
+            bottom_illu_dorsal_det_data: Bottom illumination dorsal detection data.
+            left_illu_dorsal_det_data: Left illumination dorsal detection data.
+            right_illu_dorsal_det_data: Right illumination dorsal detection data.
+            ventral_det_data: Ventral detection data.
+            dorsal_det_data: Dorsal detection data.
+            save_path: Path to save the output data.
+            det_only_flag: Detection-only flag.
+            flip_axes: Axes to flip the data.
+            T_flag: Transpose flag for the data.
+            leaf_paths: File paths for reading and saving data.
+
+        Returns:
+            None
+        """
         illu_name = leaf_paths["illu_name"]
         fb_xy = leaf_paths["fb_xy"]
 
@@ -1438,6 +1678,23 @@ class FUSE_det:
         display,
         leaf_paths,
     ):
+        """
+        Generate segmentation mask for the sample.
+
+        Args:
+            ventral_det_data: Ventral detection data.
+            dorsal_det_data: Dorsal detection data.
+            det_only_flag: Detection-only flag.
+            save_path: Path to save the output data.
+            T_flag: Transpose flag for the data.
+            require_registration: Whether registration is required.
+            flip_axes: Axes to flip the data.
+            display: Whether to display the results.
+            leaf_paths: File paths for reading and saving data.
+
+        Returns:
+            tuple: Segmentation mask and crop coordinates (xs, xe, ys, ye).
+        """
         print("\nLocalize sample...")
         print("read in...")
         illu_name = leaf_paths["illu_name"]
@@ -1577,6 +1834,33 @@ class FUSE_det:
         save_path,
         flip_axes,
     ):
+        """
+        Process the datasets with illumination on the top/left side for boundary estimation.
+
+        Args:
+            top_illu_ventral_det_data: Top illumination ventral detection data.
+            left_illu_ventral_det_data: Left illumination ventral detection data.
+            top_illu_dorsal_det_data: Top illumination dorsal detection data.
+            bottom_illu_dorsal_det_data: Bottom illumination dorsal detection data.
+            left_illu_dorsal_det_data: Left illumination dorsal detection data.
+            right_illu_dorsal_det_data: Right illumination dorsal detection data.
+            ventral_det_data: Ventral detection data.
+            dorsal_det_data: Dorsal detection data.
+            segMask: Segmentation mask.
+            det_only_flag: Detection-only flag.
+            T_flag: Transpose flag for the data.
+            xs: Crop coordinate.
+            xe: Crop coordinate.
+            ys: Crop coordinate.
+            ye: Crop coordinate.
+            require_registration: Whether registration is required.
+            flip_ill: Flip flag for illumination axis.
+            save_path: Path to save the output data.
+            flip_axes: Axes to flip the data.
+
+        Returns:
+            np.ndarray: Estimated boundary.
+        """
         if not det_only_flag:
             print("\nFor top/left Illu...")
         else:
@@ -1695,6 +1979,33 @@ class FUSE_det:
         save_path,
         flip_axes,
     ):
+        """
+        Process the datasets with illumination on the bottom/right side for boundary estimation.
+
+        Args:
+            bottom_illu_ventral_det_data: Bottom illumination ventral detection data.
+            right_illu_ventral_det_data: Right illumination ventral detection data.
+            top_illu_dorsal_det_data: Top illumination dorsal detection data.
+            bottom_illu_dorsal_det_data: Bottom illumination dorsal detection data.
+            left_illu_dorsal_det_data: Left illumination dorsal detection data.
+            right_illu_dorsal_det_data: Right illumination dorsal detection data.
+            ventral_det_data: Ventral detection data.
+            dorsal_det_data: Dorsal detection data.
+            segMask: Segmentation mask.
+            det_only_flag: Detection-only flag.
+            T_flag: Transpose flag for the data.
+            xs: Crop coordinate.
+            xe: Crop coordinate.
+            ys: Crop coordinate.
+            ye: Crop coordinate.
+            require_registration: Whether registration is required.
+            flip_ill: Flip flag for illumination axis.
+            save_path: Path to save the output data.
+            flip_axes: Axes to flip the data.
+
+        Returns:
+            np.ndarray: Estimated boundary.
+        """
         print("\n\nFor bottom/right Illu...")
         print("read in...")
 
@@ -1795,6 +2106,28 @@ class FUSE_det:
         ys,
         ye,
     ):
+        """
+        Estimate the fusion boundary.
+
+        Args:
+            rawPlanesTop: Data with ventral-side detection.
+            rawPlanesBottom: Data with dorsal-side detection.
+            segMask: Segmentation mask.
+            s: Number of slices.
+            m: Number of rows.
+            n: Number of columns.
+            m_c: Number of columns in the original image.
+            n_c: Number of rows in the original image.
+            m0: Number of columns in the output image.
+            n0: Number of rows in the output image.
+            xs: Crop coordinate.
+            xe: Crop coordinate.
+            ys: Crop coordinate.
+            ye: Crop coordinate.
+
+        Returns:
+            np.ndarray: Predicted fusion boundary.
+        """
         topF, bottomF = self.extractNSCTF(
             s,
             m,
@@ -1837,6 +2170,18 @@ class FUSE_det:
         z_downsample_ratio,
         device,
     ):
+        """
+        Downsample 3D data stored in memmap format.
+
+        Args:
+            data: Input data.
+            xy_downsample_ratio: Downsample ratio for xy dimensions.
+            z_downsample_ratio: Downsample ratio for z dimension.
+            device: Device to perform the computation.
+
+        Returns:
+            downsampled data
+        """
         for r, i in enumerate(
             tqdm.tqdm(
                 range(0, data.shape[0], z_downsample_ratio),
@@ -1875,6 +2220,17 @@ class FUSE_det:
         bottomF,
         segMask,
     ):
+        """
+        Perform specifically estimation of the fusion boundary.
+
+        Args:
+            topF: NSCT features from the data with ventral-side detection.
+            bottomF: NSCT features from the data with dorsal-side detection.
+            segMask: Segmentation mask.
+
+        Returns:
+            Fusion boundary.
+        """
         print("to GPU...")
         segMaskGPU = torch.from_numpy(segMask).to(self.train_params["device"])
         topFGPU = torch.from_numpy(topF**2).to(self.train_params["device"])
@@ -1905,6 +2261,20 @@ class FUSE_det:
         bottomVol,
         device,
     ):
+        """
+        Extract NSCT features.
+
+        Args:
+            s: Number of slices.
+            m: Number of rows.
+            n: Number of columns.
+            topVol: dataset 1.
+            bottomVol: dataset 2.
+            device: Device to perform the computation.
+
+        Returns:
+            tuple: NSCT features for the two inputs respectively.
+        """
         r = self.train_params["resample_ratio"]
         featureExtrac = NSCTdec(levels=[3, 3, 3], device=device).to(device)
         topF = np.empty((s, m, n), dtype=np.float32)
@@ -1943,6 +2313,19 @@ class FUSE_det:
         det_only_flag,
         leaf_paths,
     ):
+        """
+        Segment the sample.
+
+        Args:
+            topVoltmp: Data with ventral-side detection.
+            bottomVol: Data with dorsal-side detection.
+            info_path: Path to the info file.
+            det_only_flag: Detection-only flag.
+            leaf_paths: File paths for reading and saving data.
+
+        Returns:
+            segMask: Segmentation mask.
+        """
         if not det_only_flag:
             Min, Max = [], []
             th = 0
@@ -2009,6 +2392,19 @@ class FUSE_det:
         det_only_flag,
         leaf_paths,
     ):
+        """
+        Localize the sample within the image planes.
+
+        Args:
+            rawPlanes_ventral: data 1.
+            rawPlanes_dorsal: data 2.
+            info_path: Path to the info file.
+            det_only_flag: Detection-only flag.
+            leaf_paths: File paths for reading and saving data.
+
+        Returns:
+            cropInfo: Cropping information for the sample.
+        """
         cropInfo = pd.DataFrame(
             columns=["startX", "endX", "startY", "endY", "maxv"],
             index=["ventral", "dorsal"],
@@ -2051,6 +2447,16 @@ class FUSE_det:
         maximumProjection,
         th=None,
     ):
+        """
+        Segment the maximum intensity projection (MIP) image.
+
+        Args:
+            maximumProjection: Input MIP image.
+            th: Threshold value (optional).
+
+        Returns:
+            tuple: Cropping coordinates (a, b, c, d) for the segmented region.
+        """
         m, n = maximumProjection.shape
         if th is None:
             th = filters.threshold_otsu(maximumProjection)
@@ -2063,98 +2469,3 @@ class FUSE_det:
         c = max(0, d2[0] - 100)
         d = min(m, d2[-1] + 100)
         return a, b, c, d
-
-
-if __name__ == "__main__":
-    model = FUSE_det(
-        require_segmentation=True,
-        registration_params={
-            "use_exist_reg": True,
-            "lateral_downsample": 2,
-            "skip_refine_registration": True,
-        },
-    )
-    # import os
-    # path = "C:/Users/yu/Downloads/new_for_revision2/img_90_degree_4x_CH1_500_CH2_630"
-    # dir = os.listdir(path)
-    # # all_images = ["/content/drive/MyDrive/LSFM/Multi-View-Reconstruction/Data/new_for_revision/img_90_degree_4x_CH1_500_CH2_630/10-47-57_4x 0-6x 4z 500nm 630nm 90 degrees_Blaze[00 x 00]_C00_xyz-Table Z0000.ome.tif"]
-    # all_images = [f for f in dir if "C01" in f]
-    # all_images_ventral = sorted([os.path.join(path, f) for f in all_images])
-
-    # path = "C:/Users/yu/Downloads/new_for_revision2/stack3"
-    # dir = os.listdir(path)
-    # # all_images = ["/content/drive/MyDrive/LSFM/Multi-View-Reconstruction/Data/new_for_revision/img_90_degree_4x_CH1_500_CH2_630/10-47-57_4x 0-6x 4z 500nm 630nm 90 degrees_Blaze[00 x 00]_C00_xyz-Table Z0000.ome.tif"]
-    # # all_images = [f for f in dir if "C01" in f]
-    # all_images = [f for f in dir]
-    # all_images_dorsal = sorted([os.path.join(path, f) for f in all_images])
-
-    # out = model.train(
-    #     ventral_det_data=all_images_ventral,
-    #     dorsal_det_data=all_images_dorsal,
-    #     data_path="C:/Users/yu/AppData/Local/Temp",
-    #     xy_downsample_ratio=2,  # the downsampling ratio along xy to trainthe low-resolution fusion model
-    #     z_downsample_ratio=4,  # the downsampling ratio along z to trainthe low-resolution fusion model
-    #     z_spacing=3.9,
-    #     xy_spacing=2.71,
-    #     require_registration=False,
-    #     require_flipping_along_illu_for_dorsaldet=True,
-    #     require_flipping_along_det_for_dorsaldet=True,
-    #     save_path="C:/Users/yu/Downloads/new_for_revision2",
-    #     save_folder="20250613_224758",
-    #     left_right=True,
-    #     display=False,
-    # )
-
-    # # C:/Users/yu/anaconda3/envs/leonardo_toolset_v2/Lib/intermediates/20250529_175243/high_res/tmpnszb38jyh5_reg.h5
-    # v = tifffile.imread("C:/Users/yu/Downloads/illuFusionResult-front-1.tif").transpose(
-    #     0, 1, 2
-    # )
-    # d = tifffile.imread("C:/Users/yu/Downloads/illuFusionResult-back-1.tif").transpose(
-    #     0, 1, 2
-    # )
-    # out = model.train(
-    #     ventral_det_data=v,
-    #     dorsal_det_data=d,
-    #     data_path="C:/Users/yu/Downloads",
-    #     xy_spacing=0.65,
-    #     z_spacing=4,
-    #     require_registration=True,
-    #     require_flipping_along_illu_for_dorsaldet=True,
-    #     require_flipping_along_det_for_dorsaldet=True,
-    #     save_path="C:/Users/yu/Downloads",
-    #     save_folder="zebrafish_result",
-    #     left_right=True,
-    #     display=False,
-    # )
-
-    # out = model.train(
-    #     top_illu_ventral_det_data="S000_t000000_V000_R0000_X000_Y000_C02_I1_D0_P00237.tif",
-    #     bottom_illu_ventral_det_data="S000_t000000_V000_R0000_X000_Y000_C02_I0_D0_P00237.tif",
-    #     top_illu_dorsal_det_data="S000_t000000_V000_R0000_X000_Y000_C02_I1_D0_P00249.tif",
-    #     bottom_illu_dorsal_det_data="S000_t000000_V000_R0000_X000_Y000_C02_I0_D0_P00249.tif",
-    #     data_path="D:/H2BGFP",
-    #     xy_spacing=0.65,
-    #     z_spacing=4,
-    #     require_registration=True,
-    #     require_flipping_along_illu_for_dorsaldet=True,
-    #     require_flipping_along_det_for_dorsaldet=True,
-    #     save_path="D:/H2BGFP/0-180-yaml",
-    #     save_folder="result",
-    #     display=False,
-    # )
-
-    out = model.train(
-        top_illu_ventral_det_data="S000_t000000_V000_R0000_X000_Y000_C02_I1_D0_P00342.tif",
-        bottom_illu_ventral_det_data="S000_t000000_V000_R0000_X000_Y000_C02_I0_D0_P00342.tif",
-        top_illu_dorsal_det_data="S000_t000000_V000_R0000_X000_Y000_C02_I0_D1_P00342.tif",
-        bottom_illu_dorsal_det_data="S000_t000000_V000_R0000_X000_Y000_C02_I1_D1_P00342.tif",
-        data_path="D:/XSPIM-new/R0",
-        xy_spacing=0.65,
-        z_spacing=4,
-        require_registration=False,
-        require_flipping_along_illu_for_dorsaldet=True,
-        require_flipping_along_det_for_dorsaldet=False,
-        save_path="D:/XSPIM-new/R0",
-        save_folder="20250614_023005",
-        display=False,
-    )

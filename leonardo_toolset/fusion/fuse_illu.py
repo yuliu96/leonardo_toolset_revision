@@ -40,39 +40,20 @@ import pandas as pd
 pd.set_option("display.width", 10000)
 
 
-def make_Ramp(ramp_colors):
-    from colour import Color
-    from matplotlib.colors import LinearSegmentedColormap
-
-    color_ramp = LinearSegmentedColormap.from_list(
-        "my_list", [Color(c1).rgb for c1 in ramp_colors]
-    )
-    return color_ramp
-
-
-custom_ramp = make_Ramp(["#000000", "#D62728"])
-red = custom_ramp(range(256))[:, :-1] * 255
-
-custom_ramp = make_Ramp(["#000000", "#FF7F0E"])
-orange = custom_ramp(range(256))[:, :-1] * 255
-
-custom_ramp = make_Ramp(["#000000", "#17BECF"])
-blue = custom_ramp(range(256))[:, :-1] * 255
-
-custom_ramp = make_Ramp(["#000000", "#2CA02C"])
-green = custom_ramp(range(256))[:, :-1] * 255
-
-custom_ramp = make_Ramp(["#000000", "#9467BD"])
-purple = custom_ramp(range(256))[:, :-1] * 255
-
-red = red.astype(np.uint8).T
-orange = orange.astype(np.uint8).T
-blue = blue.astype(np.uint8).T
-purple = purple.astype(np.uint8).T
-green = green.astype(np.uint8).T
-
-
 class FUSE_illu:
+    """
+    Main class for illumination-based multi-view fusion.
+
+    Handles the workflow for dual-illumination image fusion, including cropping, segmentation,
+    feature extraction, and final volume reconstruction.
+    """
+
+    """
+    Main class for Leonardo-Fuse (along illumination).
+
+    This class handles the workflow for fusion in data with dual-sided illumination.
+    """
+
     def __init__(
         self,
         require_precropping: bool = True,
@@ -84,6 +65,32 @@ class FUSE_illu:
         require_segmentation: bool = True,
         device: str = None,
     ):
+        """
+        Initialize the FUSE_illu class with training parameters.
+
+        Args:
+            require_precropping : bool
+                Whether to perform pre-cropping before training.
+                If True, the model will automatically estimate a bounding box warping the foreground region based on which
+                to estimate the fusion boundary.
+            precropping_params : list of int
+                Manually define pre-cropping regions as [x_start, x_end, y_start, y_end].
+                regions outside will be considered as background and will not be considered for estimating the fusion boundary.
+            resample_ratio : int
+                Downsampling factor when estimating fusion boundaries.
+            window_size : list of int
+                The size of the Savitzky-Golay filter window as [z, xy].
+                `z` is the window size along the depth (z-axis),
+                and `xy` is the window size along the x/y plane.
+            poly_order : list of int
+                Polynomial order for the Savitzky-Golay filter in [z, xy] directions.
+            n_epochs : int
+                Number of optimization epochs for estimating fusion boundary.
+            require_segmentation : bool
+                Whether segmentation is required as part of the fusion pipeline.
+            device : str
+                Target computation device, e.g., 'cuda' or 'cpu'. If None, defaults to available GPU.
+        """
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.train_params = {
@@ -108,7 +115,15 @@ class FUSE_illu:
         )
 
     def train_from_params(self, params: dict):
-        """Parses training parameters from dictionary"""
+        """
+        Train the fusion model using a parameter dictionary. Developped for the napari plugin.
+
+        Args:
+            params (dict): Dictionary containing all necessary parameters.
+
+        Returns:
+            np.ndarray: The fused output image.
+        """
         if params["method"] != "illumination":
             raise ValueError(f"Invalid method: {params['method']}")
         if params["amount"] != 2:
@@ -177,6 +192,48 @@ class FUSE_illu:
         camera_position: str = "",
         display: bool = True,
     ):
+        """
+        Main training workflow for Leonardo-Fuse (along illumination).
+
+        This function supports fusion of light sheet data acquired with dual-sided illumination.
+
+        Input fields should be populated accordingly:
+
+        - For light sheet systems with **top–bottom illumination** (in the image space), use `top_illu_*` and `bottom_illu_*`.
+        - For systems with **left–right illumination** (in the image space), use `left_illu_*` and `right_illu_*`.
+
+        Args:
+            data_path : str, optional
+                Root directory to prepend when input data is provided as a relative path (str).
+                Ignored if inputs are arrays or lists of absolute paths.
+            top_illu_data : dask.array.Array | np.ndarray | str
+                Top illumination data.
+            bottom_illu_data : dask.array.Array | np.ndarray | str
+                Bottom illumination data.
+            left_illu_data : dask.array.Array | np.ndarray | str
+                Left illumination data.
+            right_illu_data : dask.array.Array | np.ndarray | str
+                Right illumination data.
+            save_path : str
+                Root path where output results will be saved.
+            save_folder : str
+                Name of the subfolder under `save_path` to save output files.
+            save_separate_results : bool, optional
+                Whether to save the fusion map as float32 files.
+                Set to `True` only if you plan to run Leonardo-DeStripe-Fuse afterward.
+            sparse_sample : bool, optional
+                Whether the specimen is mainly sparse structures.
+                If True, the fusion algorithm will adjust segmentation behavior.
+            cam_pos : str, optional
+                Camera position ('front' or 'back' in the image space).
+            camera_position : str, optional
+                Camera position string for naming.
+            display : bool, optional
+                Whether to visualize intermediate or final results using matplotlib.
+
+        Returns:
+            np.ndarray: The fused output image.
+        """
         if not os.path.exists(save_path):
             print("saving path does not exist.")
             return
@@ -452,23 +509,52 @@ class FUSE_illu:
 
     def train_with_boundary(
         self,
+        boundary_path: str,
         data_path: str = "",
-        sample_name: str = "",
         top_illu_data: Union[np.ndarray, da.core.Array, str] = None,
         bottom_illu_data: Union[np.ndarray, da.core.Array, str] = None,
         left_illu_data: Union[np.ndarray, da.core.Array, str] = None,
         right_illu_data: Union[np.ndarray, da.core.Array, str] = None,
         save_path: str = "",
-        save_folder: str = "",
         save_separate_results: bool = False,
         cam_pos: str = "front",
         camera_position: str = "",
         display: bool = True,
-        boundary_path: str = "",
     ):
+        """
+        Run fusion using a precomputed fusion boundary.
+
+        Args:
+            data_path : str, optional
+                Root directory to prepend when input data is provided as a relative path (str).
+                Ignored if inputs are arrays or absolute paths.
+            top_illu_data : dask.array.Array | np.ndarray | str
+                Top illumination data.
+            bottom_illu_data : dask.array.Array | np.ndarray | str
+                Bottom illumination data.
+            left_illu_data : dask.array.Array | np.ndarray | str
+                Left illumination data.
+            right_illu_data : dask.array.Array | np.ndarray | str
+                Right illumination data.
+            save_path : str
+                Absolute path where fusion result in .tif will be saved.
+            save_separate_results : bool, optional
+                Whether to save the fusion map as float32 files.
+                Set to `True` only if you plan to run Leonardo-DeStripe-Fuse afterward.
+            cam_pos : str, optional
+                Camera position ('front' or 'back' in the image space).
+            camera_position : str, optional
+                Camera position string for naming.
+            display : bool, optional
+                Whether to visualize intermediate or final results using matplotlib.
+            boundary_path : str
+                Absolute path of the precomputed fusion boundary in .tif file.
+
+        Returns:
+            np.ndarray: The fused output image.
+        """
         print("Running illum fusion using precomputed boundary...")
         # from train method start (180-288)
-        data_path = os.path.join(data_path, sample_name)
         if not os.path.exists(save_path):
             print("saving path does not exist.")
             return
@@ -664,7 +750,23 @@ class FUSE_illu:
         )
         return result
 
-    def dualViewFusion(self, topF, bottomF, segMask):
+    def dualViewFusion(
+        self,
+        topF,
+        bottomF,
+        segMask,
+    ):
+        """
+        Perform specifically estimation of the fusion boundary.
+
+        Args:
+            topF: NSCT features from the data with top-side detection.
+            bottomF: NSCT features from the data with bottom-side detection.
+            segMask: Segmentation mask.
+
+        Returns:
+            Fusion boundary.
+        """
         print("to GPU...")
         segMask_GPU = torch.from_numpy(segMask.transpose(1, 0, 2)).to(
             self.train_params["device"]
@@ -686,7 +788,27 @@ class FUSE_illu:
         del segMask, segMask_GPU, topFGPU, bottomFGPU
         return boundary
 
-    def extractNSCTF(self, s, m, n, topVol, bottomVol):
+    def extractNSCTF(
+        self,
+        s,
+        m,
+        n,
+        topVol,
+        bottomVol,
+    ):
+        """
+        Extract NSCT features.
+
+        Args:
+            s: Number of slices.
+            m: Number of rows.
+            n: Number of columns.
+            topVol: dataset 1.
+            bottomVol: dataset 2.
+
+        Returns:
+            tuple: NSCT features for the two inputs respectively.
+        """
         r = self.train_params["resample_ratio"]
         device = self.train_params["device"]
         featureExtrac = NSCTdec(levels=[3, 3, 3], device=device).to(device)
@@ -730,6 +852,20 @@ class FUSE_illu:
         th_bottom_F,
         sparse_sample,
     ):
+        """
+        Segment the sample.
+
+        Args:
+            th_top, th_bottom: Thresholds for two volumes.
+            max_top, max_bottom: Maximum values for two volumes.
+            topVol, bottomVol: Top and bottom volumes.
+            topVol_F, bottomVol_F: Feature volumes.
+            th_top_F, th_bottom_F: Feature thresholds.
+            sparse_sample (bool): Whether to use sparse sampling.
+
+        Returns:
+            np.ndarray: Segmentation mask.
+        """
         s, m, n = topVol.shape
         topSegMask = np.zeros((s, m, n), dtype=bool)
         bottomSegMask = np.zeros((s, m, n), dtype=bool)
@@ -826,7 +962,25 @@ class FUSE_illu:
         del topSegMask, bottomSegMask, topVol, bottomVol
         return segMask
 
-    def measureSample(self, rawPlanes, f, save_path, MIP_info):
+    def measureSample(
+        self,
+        rawPlanes,
+        f,
+        save_path,
+        MIP_info,
+    ):
+        """
+        Measure sample statistics and save them.
+
+        Args:
+            rawPlanes (np.ndarray): Input volume.
+            f (str): View identifier ('top' or 'bottom').
+            save_path (str): Path to save statistics.
+            MIP_info (dict): Maximum intensity projection info.
+
+        Returns:
+            tuple: (thvol, maxvvol, minvvol)
+        """
         if "top" in f:
             f_name = "top/left"
         if "bottom" in f:
@@ -854,7 +1008,21 @@ class FUSE_illu:
         )
         return thvol, maxvvol, minvvol
 
-    def localizingSample(self, rawPlanes_top, rawPlanes_bottom):
+    def localizingSample(
+        self,
+        rawPlanes_top,
+        rawPlanes_bottom,
+    ):
+        """
+        Localize the sample and compute cropping information.
+
+        Args:
+            rawPlanes_top (np.ndarray): Top illumination volume.
+            rawPlanes_bottom (np.ndarray): Bottom illumination volume.
+
+        Returns:
+            tuple: (cropInfo, MIP_info)
+        """
         cropInfo = pd.DataFrame(
             columns=["startX", "endX", "startY", "endY", "maxv"],
             index=["top", "bottom"],
@@ -904,6 +1072,22 @@ def fusionResult(
     path,
     GFr=[5, 49],
 ):
+    """
+    Perform the final fusion of top and bottom volumes using the computed boundary.
+
+    Args:
+        T_flag (bool): Whether to transpose the result.
+        topVol (np.ndarray): Top illumination volume.
+        bottomVol (np.ndarray): Bottom illumination volume.
+        boundary (np.ndarray): Fusion boundary.
+        device: Torch device to use.
+        save_separate_results (bool): Whether to save separate results.
+        path (str): Path to save masks.
+        GFr (list): Window size for fusion.
+
+    Returns:
+        np.ndarray: The fused volume.
+    """
     s, m, n = topVol.shape
     boundary = torch.from_numpy(boundary[None, :, None, :]).to(device)
 
@@ -953,24 +1137,3 @@ def fusionResult(
             )
         recon[ind] = a
     return recon
-
-
-if __name__ == "__main__":
-    model = FUSE_illu(require_segmentation=False)
-
-    A = tifffile.imread(
-        "D:/embryo/R0/V000_R0000_X000_Y000_C02_I1_D0_P00182.tif"
-    ).transpose(0, 2, 1)
-    B = tifffile.imread(
-        "D:/embryo/R0/V000_R0000_X000_Y000_C02_I0_D0_P00182.tif"
-    ).transpose(0, 2, 1)
-
-    model.train(
-        data_path="D:/embryo/R0",
-        left_illu_data=A,
-        right_illu_data=B,
-        sparse_sample=True,
-        save_path="C:/Users/yu/Downloads",
-        save_folder="illu_fuse",
-        display=False,
-    )

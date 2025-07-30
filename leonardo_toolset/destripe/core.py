@@ -8,6 +8,8 @@ import torch
 import tqdm
 from bioio import BioImage
 
+from dask.array import Array
+
 from leonardo_toolset.destripe.guided_filter_upsample import GuidedUpsample
 from leonardo_toolset.destripe.loss_term_torch import Loss_torch
 from leonardo_toolset.destripe.network_torch import DeStripeModel_torch
@@ -49,12 +51,19 @@ except Exception as e:
 
 
 class DeStripe:
+    """
+    Main class for Leonardo-DeStripe.
+
+    This class handles the workflow for stripe removal in data (single volume
+    or multiple ones with opposite illumination or detection simultaneously).
+    """
+
     def __init__(
         self,
         resample_ratio: int = 3,
         guided_upsample_kernel: int = 49,
         hessian_kernel_sigma: float = 1,
-        lambda_masking_mse: int = 1,
+        lambda_masking_mse: float = 1,
         lambda_tv: float = 1,
         lambda_hessian: float = 1,
         inc: int = 16,
@@ -64,6 +73,42 @@ class DeStripe:
         backend: str = "jax",
         device: str = None,
     ):
+        """
+        Initialize the DeStripe class with destriping and training parameters.
+
+        Args:
+            resample_ratio : int, optional
+                Downsampling factor along the stripe direction
+                when training the graph neural network.
+
+            guided_upsample_kernel : int, optional
+                Kernel size for guided upsampling.
+
+            hessian_kernel_sigma : float, optional
+                Sigma to define Gaussian Hessian kernel.
+            lambda_masking_mse : float, optional
+                Weight for fidelity term in loss.
+            lambda_tv : float, optional
+                Weight for total variation-based regularization term in loss.
+            lambda_hessian : float, optional
+                Weight for Hessian-based regularization term in loss.
+            inc : int, optional
+                Dimension of the latent space in the graph neural network.
+            n_epochs : int, optional
+                Number of epochs to train the graph neural network.
+            wedge_degree : float, optional
+                Angular coverage of the wedge-shaped mask in Fourier.
+            n_neighbors : int, optional
+                Number of neighbors in the graph neural network.
+            backend : str, optional
+                Backend to use ('jax' or 'torch').
+            device : str, optional
+                Device to use ('cuda', 'cpu').
+        Note:
+            The `backend` parameter is set to 'jax' by default which is in general faster than 'torch',
+            but if JAX is not available in the environment, it will automatically switch to 'torch'.
+            The `device` parameter defaults to 'cuda' if available, otherwise 'cpu'.
+        """
         self.train_params = {
             "gf_kernel_size": guided_upsample_kernel,
             "n_neighbors": n_neighbors,
@@ -91,7 +136,13 @@ class DeStripe:
     @staticmethod
     def process(params: dict) -> None:
         """
-        Interface function for napari plugin.
+        Interface function for napari plugin. Instantiates a DeStripe model and runs training.
+
+        Args:
+            params (dict): Dictionary of parameters for model initialization and training.
+
+        Returns:
+            np.ndarray: The destriped output image.
         """
         model = DeStripe(
             resample_ratio=params["resample_ratio"],
@@ -130,6 +181,24 @@ class DeStripe:
         z: int = 1,
         backend: str = "jax",
     ):
+        """
+        Train the destriping model on a single image slice.
+
+        Args:
+            GuidedFilterHRModel: Guided upsampling model.
+            update_method: Update method for optimization.
+            sample_params (dict): Sample-specific parameters.
+            train_params (dict): Training parameters.
+            X (np.ndarray): Input image slice.
+            mask (np.ndarray): Mask for the slice.
+            fusion_mask (np.ndarray): Fusion mask for the slice.
+            s_ (int): Current slice index.
+            z (int): Total number of slices.
+            backend (str): Backend to use ('jax' or 'torch').
+
+        Returns:
+            tuple: (output image, target image)
+        """
         rng_seq = jax.random.PRNGKey(0) if backend == "jax" else None
         md = (
             sample_params["md"]
@@ -272,6 +341,27 @@ class DeStripe:
         display_angle_orientation: bool = True,
         illu_orient: str = None,
     ):
+        """
+        Train the destriping model on a full 3D array (volume).
+
+        Args:
+            X (np.ndarray or dask.array): Input image volume.
+            is_vertical (bool): Whether the stripes are vertical.
+            angle_offset_dict (dict): Dictionary of angle offsets.
+            mask (np.ndarray or dask.array): Mask for the volume.
+            train_params (dict): Training parameters.
+            fusion_mask (np.ndarray or dask.array): Fusion mask for the volume.
+            display (bool): Whether to display intermediate results.
+            device (str): Device to use.
+            non_positive (bool): Whether to allow non-positive values.
+            backend (str): Backend to use ('jax' or 'torch').
+            flag_compose (bool): Whether to compose multiple inputs.
+            display_angle_orientation (bool): Whether to display angle orientation.
+            illu_orient (str): Illumination orientation.
+
+        Returns:
+            np.ndarray: The destriped output volume.
+        """
         if train_params is None:
             train_params = destripe_train_params()
         else:
@@ -480,15 +570,83 @@ class DeStripe:
     def train(
         self,
         is_vertical: bool = None,
-        x: Union[str, np.ndarray, da.core.Array] = None,
-        mask: Union[str, np.ndarray, da.core.Array] = None,
-        fusion_mask: Union[da.core.Array, np.ndarray] = None,
+        x: Union[str, np.ndarray, Array] = None,
+        mask: Union[str, np.ndarray, Array] = None,
+        fusion_mask: Union[np.ndarray, Array] = None,
         illu_orient: str = None,
+        angle_offset: list[float] = None,
         display: bool = False,
         display_angle_orientation: bool = False,
         non_positive: bool = False,
         **kwargs,
     ):
+        """
+        Main training workflow for Leonardo-DeStripe
+        (also for Leonardo-DeStripe-Fuse).
+
+        Args:
+            is_vertical : bool
+                Whether the stripes are vertical.
+            x : dask.array.Array | np.ndarray | str
+                Input image array or path.
+            mask : dask.array.Array | np.ndarray | str
+                Optional mask for the image. Enables human-guided intervention during destriping.
+                In regions where the mask equals 1, the graph neural network will avoid modifying
+                the underlying structures. This is useful when users have prior knowledge about
+                specific regions that should remain untouched (e.g., important anatomical features).
+                If not provided, the network will operate on the entire image.
+            fusion_mask : np.ndarray or dask.array
+                Fusion mask for the input image. This is needed in the Leonardo-DeStripe-Fuse mode, in which
+                multiple images with opposite illumination or detection are jointly destriped. To use this
+                more powerful mode, first run Leonardo-Fuse with ``save_separate_results=True`` to generate
+                the necessary intermediate results. The location of the generated fusion mask can then be found
+                in the YAML metadata under ``save_path/save_folder``. For details about the Leonardo-DeStripe-Fuse
+                mode, please refer to the Note below.
+            illu_orient : str, optional
+                Illumination orientation in the image space of ``x``. More information please refer to the Note below
+            display : bool
+                Whether to display destriped results in matplotlib in real-time.
+            display_angle_orientation : bool
+                Whether to display check for angle orientation.
+            non_positive : bool
+                Whether the stripes are non-positive only.
+            **kwargs
+                Additional keyword arguments for advanced workflows.
+
+        Returns:
+            np.ndarray: The destriped output image or volume.
+
+        .. note::
+
+            This function supports two modes:
+
+            1. **Leonardo-DeStripe** (default):
+            Provide a single input ``x`` and a corresponding illumination angle offset
+            as ``angle_offset`` via ``**kwargs``. This is the standard Leonardo-DeStripe mode.
+
+            .. important::
+                If ``x`` is given, you **must** also provide ``angle_offset`` via ``**kwargs``.
+
+            2. **Compose (multi-view) destriping**:
+            For light-sheet datasets with dual-sided illumination, detection, or both,
+            you can instead provide multiple inputs ``x_0``, ``x_1``, … and
+            corresponding offsets ``angle_offset_0``, ``angle_offset_1``, … via ``**kwargs``.
+            These will be jointly destriped and fused.
+            This is the advanced Leonardo-DeStripe-Fuse mode.
+
+        .. note::
+            Although Leonardo-DeSrtripe(-Fuse) is mainly empowered by a graph a neural network,
+            there is an additional post-processing module to further preserve sample details by using illumination priors.
+            This can be automatically turned on by giving parameter ``illu_orient`` (in Leonardo-DeStripe mode) through ``**kwargs``.
+            This parameter specifies the direction of illumination in the **image space**.
+
+            - Valid options are: ``"top"``, ``"bottom"``, ``"left"``, ``"right"``,
+              and dual-side illuminations: ``"top-bottom"``, ``"left-right"`` (e.g., Ultramicroscope Blaze).
+
+            - In **Leonardo-DeStripe-Fuse mode**, provide multiple orientations via
+              ``illu_orient_0``, ``illu_orient_1``, … inside ``**kwargs``.
+
+        """
 
         if x is not None:
             if (illu_orient is None) and (is_vertical is None):
@@ -541,10 +699,13 @@ class DeStripe:
                     X_data.append(X_handle.get_image_dask_data("ZYX", T=0, C=0))
             X = da.stack(X_data, 1)
 
-        angle_offset_dict = {}
-        for key, item in kwargs.items():
-            if key.startswith("angle_offset"):
-                angle_offset_dict.update({key: item})
+        if flag_compose:
+            angle_offset_dict = {}
+            for key, item in kwargs.items():
+                if key.startswith("angle_offset"):
+                    angle_offset_dict.update({key: item})
+        else:
+            angle_offset_dict = {"angle_offset": angle_offset}
 
         z, _, m, n = X.shape
 
