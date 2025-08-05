@@ -58,7 +58,6 @@ html_theme_options = {
     "show_prev_next": False,
     "show_toc_level": 2,
     "secondary_sidebar_items": ["page-toc"],
-    # 不要 指定 navbar_start、navbar_center、navbar_end
 }
 
 
