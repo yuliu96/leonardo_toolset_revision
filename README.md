@@ -11,6 +11,8 @@ For a quick start, you can walk through [our tutorials and example notebooks](ht
 
 ## Installation:
 
+> **Note**: Requires **Python 3.10 or newer**.
+
 **Stable Release:** `pip install leonardo_toolset`<br>
 **Development Head:** `pip install git+https://github.com/peng-lab/leonardo_toolset.git`
 

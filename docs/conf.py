@@ -28,6 +28,8 @@ extensions = [
     "sphinxcontrib.video",
     "sphinx_togglebutton",
     "sphinx.ext.napoleon",
+    "sphinx_panels",
+    "sphinx_design",
 ]
 
 # templates_path = ["_templates"]

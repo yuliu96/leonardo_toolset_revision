@@ -175,6 +175,8 @@ class FUSE_det:
         else:
             self.registration_params = define_registration_params(**registration_params)
 
+        print("[Leonardo-Fuse] Backend: PyTorch | Device: {}".format(str(device)))
+
     def train_from_params(
         self,
         params: dict,
@@ -361,10 +363,6 @@ class FUSE_det:
             - For light sheet systems with **top–bottom illumination** (in the image space), use `top_illu_*` and `bottom_illu_*`.
             - For systems with **left–right illumination** (in the image space), use `left_illu_*` and `right_illu_*`.
 
-        Note:
-            There is big data mode with `FUSE_det` and can be enabled if either `z_downsample_ratio > 1` or `xy_downsample_ratio > 1`.
-            Currently, this mode is **only supported when `ventral_det_data` and `dorsal_det_data` are provided**.
-
         Args:
             require_registration : bool
                 Whether registration is needed.
@@ -378,27 +376,37 @@ class FUSE_det:
                 Root directory to prepend when input data is provided as a relative path (str).
                 Ignored if inputs are arrays or lists of absolute paths.
             top_illu_ventral_det_data : dask.array.Array | np.ndarray | str
-                Top illumination, ventral detection data.
+                Top illumination, ventral detection data. Can be:
+                - A 3D array (Dask or NumPy),
+                - A single file path (str), relative to `data_path`.
             bottom_illu_ventral_det_data : dask.array.Array | np.ndarray | str
                 Bottom illumination, ventral detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             top_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
                 Top illumination, dorsal detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             bottom_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
                 Bottom illumination, dorsal detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             left_illu_ventral_det_data : dask.array.Array | np.ndarray | str
                 Left illumination, ventral detection data.
             right_illu_ventral_det_data : dask.array.Array | np.ndarray | str
                 Right illumination, ventral detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             left_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
                 Left illumination, dorsal detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             right_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
                 Right illumination, dorsal detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             ventral_det_data : dask.array.Array | np.ndarray | str | list[str]
-                Ventral detection data.
-                A list of absolute file paths can be used for the sake of image sequence.
+                Ventral detection data. Can be:
+                - A 3D array (Dask or NumPy),
+                - A single path (str), relative to `data_path`,
+                - A list of absolute file paths (list[str]), treated as an image sequence.
             dorsal_det_data : dask.array.Array | np.ndarray | str | list[str]
                 Dorsal detection data.
-                A list of absolute file paths can be used for the sake of image sequence.
+                See `ventral_det_data` for supported formats and restrictions.
             save_path : str
                 Root path where output results will be saved.
             save_folder : str
@@ -427,6 +435,19 @@ class FUSE_det:
 
         Returns:
             np.ndarray: The fused output image.
+
+        Notes:
+            - **Input format:** All input volumes must be in (Z, X, Y) format. Inputs must not contain channel dimensions.
+              If your data includes channels (e.g., shape (Z, X, Y, C) or (T, C, Z, X, Y)), please extract the relevant channel first.
+
+            - **Big data mode:** This mode is automatically enabled when `z_downsample_ratio > 1` or `xy_downsample_ratio > 1`.
+              It is currently only supported when `ventral_det_data` and `dorsal_det_data` are provided.
+              Four-view illumination fusion is not yet supported in big data mode.
+
+            - **File compatibility:** `.tif` files are reliably supported.
+              Some `.ome.tif` files may cause issues depending on your `bioio` version.
+              In such cases, please load the file manually and pass a `np.ndarray` instead.
+
         """
 
         if not os.path.exists(save_path):
@@ -445,9 +466,7 @@ class FUSE_det:
         args_dict = {k: v for k, v in locals().items() if k in allowed_keys}
         args_dict.update({"train_params": self.train_params})
         args_dict.update({"registration_params": self.registration_params})
-        args_dict.update(
-            {"file_name": os.path.join(save_path, save_folder, "det_info.yaml")}
-        )
+        args_dict.update({"file_name": "det_info.yaml"})
         yaml_path = parse_yaml_det(**args_dict)
 
         if (xy_downsample_ratio is None) and (z_downsample_ratio is None):
@@ -663,8 +682,12 @@ class FUSE_det:
         """
         Core fusion implementation for Leonardo-Fuse (along detection).
 
-        This function performs the actual fusion of dual-view light sheet data. It is
-        called internally by `train()`.
+        This internal function performs the actual fusion of dual-view light sheet data.
+        It is called by `train()` and assumes all inputs have already been preprocessed
+        or dispatched accordingly.
+
+        For detailed documentation of the input fields and usage scenarios,
+        please refer to the docstring of `train()`.
 
         Args:
             require_registration : bool
@@ -682,25 +705,36 @@ class FUSE_det:
                 Whether the specimen is mainly sparse structures.
                 If True, influences segmentation behavior during fusion.
             top_illu_ventral_det_data : dask.array.Array | np.ndarray | str
-                Top illumination, ventral detection data.
+                Top illumination, ventral detection data. Can be:
+                - A 3D array (Dask or NumPy),
+                - A single file path (str), relative to `data_path`.
             bottom_illu_ventral_det_data : dask.array.Array | np.ndarray | str
                 Bottom illumination, ventral detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             top_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
                 Top illumination, dorsal detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             bottom_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
                 Bottom illumination, dorsal detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             left_illu_ventral_det_data : dask.array.Array | np.ndarray | str
                 Left illumination, ventral detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             right_illu_ventral_det_data : dask.array.Array | np.ndarray | str
                 Right illumination, ventral detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             left_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
                 Left illumination, dorsal detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             right_illu_dorsal_det_data : dask.array.Array | np.ndarray | str
                 Right illumination, dorsal detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             ventral_det_data : dask.array.Array | np.ndarray | str
                 Ventral detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             dorsal_det_data : dask.array.Array | np.ndarray | str
                 Dorsal detection data.
+                See `top_illu_ventral_det_data` for supported formats.
             save_path : str
                 Root path where output results will be saved.
             save_folder : str
@@ -1164,12 +1198,22 @@ class FUSE_det:
 
         Args:
             require_registration (bool): Whether registration is needed.
-            flip_axes: Axes to flip the data.
+
+        Args:
+            require_registration (bool):
+                Whether registration is needed.
+            flip_axes (tuple[int]):
+                Axes along which to flip the `dorsal_det_data` volume.
+                For example:
+                - `(0,)` flips along the z-axis,
+                - `(0, 1)` flips both the z-axis abd the y-axis.
+                This replaces the usage of `require_flipping_along_illu_for_dorsaldet` and
+                `require_flipping_along_det_for_dorsaldet` in `train()`.
             save_path (str): Path to save the output data.
             save_folder (str): Folder name to save the output data.
             ventral_det_data (np.ndarray): Ventral detection data.
             dorsal_det_data (np.ndarray): Dorsal detection data.
-            T_flag (bool): Transpose flag for the data.
+            T_flag (bool): Transpose flag for the data. If `True`, the input will be transposed as `(Z, X, Y) → (Z, Y, X)`.
             yaml_path (str): Path to the YAML file with configuration.
             z_upsample_ratio (int): Downsampling ratio in big data mode for z dimension.
             xy_upsample_ratio (int): Downsampling ratio in big data mode for xy dimensions.
@@ -1354,17 +1398,25 @@ class FUSE_det:
         Perform coarse-to-fine registration for the dorsal detection data.
 
         Args:
-            top_illu_dorsal_det_data: Top illumination dorsal detection data.
-            bottom_illu_dorsal_det_data: Bottom illumination dorsal detection data.
-            left_illu_dorsal_det_data: Left illumination dorsal detection data.
-            right_illu_dorsal_det_data: Right illumination dorsal detection data.
-            ventral_det_data: Ventral detection data.
-            dorsal_det_data: Dorsal detection data.
-            save_path: Path to save the output data.
-            det_only_flag: Detection-only flag.
-            flip_axes: Axes to flip the data.
-            T_flag: Transpose flag for the data.
-            leaf_paths: File paths for reading and saving data.
+            top_illu_dorsal_det_data (np.ndarray | dask.array.Array | str): Top illumination dorsal detection data.
+            bottom_illu_dorsal_det_data (np.ndarray | dask.array.Array | str): Bottom illumination dorsal detection data.
+            left_illu_dorsal_det_data (np.ndarray | dask.array.Array | str): Left illumination dorsal detection data.
+            right_illu_dorsal_det_data (np.ndarray | dask.array.Array | str): Right illumination dorsal detection data.
+            ventral_det_data (np.ndarray | dask.array.Array | str): Ventral detection data.
+            dorsal_det_data (np.ndarray | dask.array.Array | str): Dorsal detection data.
+            save_path (str): Path to save the output data.
+            det_only_flag (bool): Detection-only flag.
+            flip_axes (tuple[int]):
+                Axes along which to flip the `...dorsal_det_data` volume.
+                For example:
+                - `(0,)` flips along the z-axis,
+                - `(0, 1)` flips both the z-axis abd the y-axis.
+                This replaces the usage of `require_flipping_along_illu_for_dorsaldet` and
+                `require_flipping_along_det_for_dorsaldet` in `train()`.
+            T_flag (bool): Transpose flag for the data. If `True`, the input will be transposed as `(Z, X, Y) → (Z, Y, X)`.
+            leaf_paths (Dict[str, str]):
+                A dictionary mapping leaf names to their corresponding file paths.
+                This is derived from `yaml_path` in `train_down_sample()` and used for I/O operations.
 
         Returns:
             None
@@ -1682,15 +1734,23 @@ class FUSE_det:
         Generate segmentation mask for the sample.
 
         Args:
-            ventral_det_data: Ventral detection data.
-            dorsal_det_data: Dorsal detection data.
-            det_only_flag: Detection-only flag.
-            save_path: Path to save the output data.
-            T_flag: Transpose flag for the data.
-            require_registration: Whether registration is required.
-            flip_axes: Axes to flip the data.
-            display: Whether to display the results.
-            leaf_paths: File paths for reading and saving data.
+            ventral_det_data (np.ndarray | dask.array.Array | str): Ventral detection data.
+            dorsal_det_data (np.ndarray | dask.array.Array | str): Dorsal detection data.
+            det_only_flag (bool): Detection-only flag.
+            save_path (str): Path to save the output data.
+            T_flag (bool): Transpose flag for the data. If `True`, the input will be transposed as `(Z, X, Y) → (Z, Y, X)`.
+            require_registration (bool): Whether registration is required.
+            flip_axes (tuple[int]):
+                Axes along which to flip the `dorsal_det_data` volume.
+                For example:
+                - `(0,)` flips along the z-axis,
+                - `(0, 1)` flips both the z-axis abd the y-axis.
+                This replaces the usage of `require_flipping_along_illu_for_dorsaldet` and
+                `require_flipping_along_det_for_dorsaldet` in `train()`.
+            display (bool): Whether to display the results.
+            leaf_paths (Dict[str, str]):
+                A dictionary mapping leaf names to their corresponding file paths.
+                This is derived from `yaml_path` in `train_down_sample()` and used for I/O operations.
 
         Returns:
             tuple: Segmentation mask and crop coordinates (xs, xe, ys, ye).
@@ -1838,25 +1898,31 @@ class FUSE_det:
         Process the datasets with illumination on the top/left side for boundary estimation.
 
         Args:
-            top_illu_ventral_det_data: Top illumination ventral detection data.
-            left_illu_ventral_det_data: Left illumination ventral detection data.
-            top_illu_dorsal_det_data: Top illumination dorsal detection data.
-            bottom_illu_dorsal_det_data: Bottom illumination dorsal detection data.
-            left_illu_dorsal_det_data: Left illumination dorsal detection data.
-            right_illu_dorsal_det_data: Right illumination dorsal detection data.
-            ventral_det_data: Ventral detection data.
-            dorsal_det_data: Dorsal detection data.
-            segMask: Segmentation mask.
-            det_only_flag: Detection-only flag.
-            T_flag: Transpose flag for the data.
-            xs: Crop coordinate.
-            xe: Crop coordinate.
-            ys: Crop coordinate.
-            ye: Crop coordinate.
-            require_registration: Whether registration is required.
-            flip_ill: Flip flag for illumination axis.
-            save_path: Path to save the output data.
-            flip_axes: Axes to flip the data.
+            top_illu_ventral_det_data (np.ndarray | dask.array.Array | str): Top illumination ventral detection data.
+            left_illu_ventral_det_data (np.ndarray | dask.array.Array | str): Left illumination ventral detection data.
+            top_illu_dorsal_det_data (np.ndarray | dask.array.Array | str): Top illumination dorsal detection data.
+            bottom_illu_dorsal_det_data (np.ndarray | dask.array.Array | str): Bottom illumination dorsal detection data.
+            left_illu_dorsal_det_data (np.ndarray | dask.array.Array | str): Left illumination dorsal detection data.
+            right_illu_dorsal_det_data (np.ndarray | dask.array.Array | str): Right illumination dorsal detection data.
+            ventral_det_data (np.ndarray | dask.array.Array | str): Ventral detection data.
+            dorsal_det_data (np.ndarray | dask.array.Array | str): Dorsal detection data.
+            segMask (np.ndarray): Segmentation mask.
+            det_only_flag (bool): Detection-only flag.
+            T_flag (bool): Transpose flag for the data. If `True`, the input will be transposed as `(Z, X, Y) → (Z, Y, X)`.
+            xs (int): Start index along the x-axis (horizontal axis) for cropping.
+            xe (int): End index along the x-axis for cropping (exclusive).
+            ys (int): Start index along the y-axis (vertical axis) for cropping.
+            ye (int): End index along the y-axis for cropping (exclusive).
+            require_registration (bool): Whether registration is required.
+            flip_ill (bool): Flip flag for illumination axis.
+            save_path (str): Path to save the output data.
+            flip_axes (tuple[int]):
+                Axes along which to flip the `...dorsal_det_data` volume.
+                For example:
+                - `(0,)` flips along the z-axis,
+                - `(0, 1)` flips both the z-axis abd the y-axis.
+                This replaces the usage of `require_flipping_along_illu_for_dorsaldet` and
+                `require_flipping_along_det_for_dorsaldet` in `train()`.
 
         Returns:
             np.ndarray: Estimated boundary.
@@ -1983,25 +2049,31 @@ class FUSE_det:
         Process the datasets with illumination on the bottom/right side for boundary estimation.
 
         Args:
-            bottom_illu_ventral_det_data: Bottom illumination ventral detection data.
-            right_illu_ventral_det_data: Right illumination ventral detection data.
-            top_illu_dorsal_det_data: Top illumination dorsal detection data.
-            bottom_illu_dorsal_det_data: Bottom illumination dorsal detection data.
-            left_illu_dorsal_det_data: Left illumination dorsal detection data.
-            right_illu_dorsal_det_data: Right illumination dorsal detection data.
-            ventral_det_data: Ventral detection data.
-            dorsal_det_data: Dorsal detection data.
-            segMask: Segmentation mask.
-            det_only_flag: Detection-only flag.
-            T_flag: Transpose flag for the data.
-            xs: Crop coordinate.
-            xe: Crop coordinate.
-            ys: Crop coordinate.
-            ye: Crop coordinate.
-            require_registration: Whether registration is required.
-            flip_ill: Flip flag for illumination axis.
-            save_path: Path to save the output data.
-            flip_axes: Axes to flip the data.
+            bottom_illu_ventral_det_data (np.ndarray | dask.array.Array | str): Bottom illumination ventral detection data.
+            right_illu_ventral_det_data (np.ndarray | dask.array.Array | str): Right illumination ventral detection data.
+            top_illu_dorsal_det_data (np.ndarray | dask.array.Array | str): Top illumination dorsal detection data.
+            bottom_illu_dorsal_det_data (np.ndarray | dask.array.Array | str): Bottom illumination dorsal detection data.
+            left_illu_dorsal_det_data (np.ndarray | dask.array.Array | str): Left illumination dorsal detection data.
+            right_illu_dorsal_det_data (np.ndarray | dask.array.Array | str): Right illumination dorsal detection data.
+            ventral_det_data (np.ndarray | dask.array.Array | str): Ventral detection data.
+            dorsal_det_data (np.ndarray | dask.array.Array | str): Dorsal detection data.
+            segMask (np.ndarray): Segmentation mask.
+            det_only_flag (bool): Detection-only flag.
+            T_flag (bool): Transpose flag for the data. If `True`, the input will be transposed as `(Z, X, Y) → (Z, Y, X)`.
+            xs (int): Start index along the x-axis (horizontal axis) for cropping.
+            xe (int): End index along the x-axis for cropping (exclusive).
+            ys (int): Start index along the y-axis (vertical axis) for cropping.
+            ye (int): End index along the y-axis for cropping (exclusive).
+            require_registration (bool): Whether registration is required.
+            flip_ill (bool): Flip flag for illumination axis.
+            save_path (str): Path to save the output data.
+            flip_axes (tuple[int]):
+                Axes along which to flip the `...dorsal_det_data` volume.
+                For example:
+                - `(0,)` flips along the z-axis,
+                - `(0, 1)` flips both the z-axis abd the y-axis.
+                This replaces the usage of `require_flipping_along_illu_for_dorsaldet` and
+                `require_flipping_along_det_for_dorsaldet` in `train()`.
 
         Returns:
             np.ndarray: Estimated boundary.
@@ -2110,20 +2182,20 @@ class FUSE_det:
         Estimate the fusion boundary.
 
         Args:
-            rawPlanesTop: Data with ventral-side detection.
-            rawPlanesBottom: Data with dorsal-side detection.
-            segMask: Segmentation mask.
-            s: Number of slices.
-            m: Number of rows.
-            n: Number of columns.
-            m_c: Number of columns in the original image.
-            n_c: Number of rows in the original image.
-            m0: Number of columns in the output image.
-            n0: Number of rows in the output image.
-            xs: Crop coordinate.
-            xe: Crop coordinate.
-            ys: Crop coordinate.
-            ye: Crop coordinate.
+            rawPlanesTop (np.ndarray): Data with ventral-side detection.
+            rawPlanesBottom (np.ndarray): Data with dorsal-side detection.
+            segMask (np.ndarray): Segmentation mask.
+            s (int): Number of slices.
+            m (int): Number of rows.
+            n (int): Number of columns.
+            m_c (int): Number of columns in the original image.
+            n_c (int): Number of rows in the original image.
+            m0 (int): Number of columns in the output image.
+            n0 (int): Number of rows in the output image.
+            xs (int): Start index along the x-axis (horizontal axis) for cropping.
+            xe (int): End index along the x-axis for cropping (exclusive).
+            ys (int): Start index along the y-axis (vertical axis) for cropping.
+            ye (int): End index along the y-axis for cropping (exclusive).
 
         Returns:
             np.ndarray: Predicted fusion boundary.
@@ -2174,10 +2246,10 @@ class FUSE_det:
         Downsample 3D data stored in memmap format.
 
         Args:
-            data: Input data.
-            xy_downsample_ratio: Downsample ratio for xy dimensions.
-            z_downsample_ratio: Downsample ratio for z dimension.
-            device: Device to perform the computation.
+            data (np.ndarray): Input data.
+            xy_downsample_ratio (int): Downsample ratio for xy dimensions.
+            z_downsample_ratio (int): Downsample ratio for z dimension.
+            device (str or torch.device): Device to perform the computation, e.g., `'cpu'`, `'cuda'`, or `torch.device('cuda:0')`.
 
         Returns:
             downsampled data
@@ -2224,9 +2296,9 @@ class FUSE_det:
         Perform specifically estimation of the fusion boundary.
 
         Args:
-            topF: NSCT features from the data with ventral-side detection.
-            bottomF: NSCT features from the data with dorsal-side detection.
-            segMask: Segmentation mask.
+            topF (np.ndarray): NSCT features from the data with ventral-side detection.
+            bottomF (np.ndarray): NSCT features from the data with dorsal-side detection.
+            segMask (np.ndarray): Segmentation mask.
 
         Returns:
             Fusion boundary.
@@ -2265,12 +2337,12 @@ class FUSE_det:
         Extract NSCT features.
 
         Args:
-            s: Number of slices.
-            m: Number of rows.
-            n: Number of columns.
-            topVol: dataset 1.
-            bottomVol: dataset 2.
-            device: Device to perform the computation.
+            s (int): Number of slices.
+            m (int): Number of rows.
+            n (int): Number of columns.
+            topVol (np.ndarray): dataset 1.
+            bottomVol (np.ndarray): dataset 2.
+            device (str or torch.device): Device to perform the computation, e.g., `'cpu'`, `'cuda'`, or `torch.device('cuda:0')`.
 
         Returns:
             tuple: NSCT features for the two inputs respectively.
@@ -2317,11 +2389,13 @@ class FUSE_det:
         Segment the sample.
 
         Args:
-            topVoltmp: Data with ventral-side detection.
-            bottomVol: Data with dorsal-side detection.
-            info_path: Path to the info file.
-            det_only_flag: Detection-only flag.
-            leaf_paths: File paths for reading and saving data.
+            topVoltmp (np.ndarray): Data with ventral-side detection.
+            bottomVol (np.ndarray): Data with dorsal-side detection.
+            info_path (str): Path to the info file.
+            det_only_flag (bool): Detection-only flag.
+            leaf_paths (Dict[str, str]):
+                A dictionary mapping leaf names to their corresponding file paths.
+                This is derived from `yaml_path` in `train_down_sample()` and used for I/O operations.
 
         Returns:
             segMask: Segmentation mask.
@@ -2396,11 +2470,13 @@ class FUSE_det:
         Localize the sample within the image planes.
 
         Args:
-            rawPlanes_ventral: data 1.
-            rawPlanes_dorsal: data 2.
-            info_path: Path to the info file.
-            det_only_flag: Detection-only flag.
-            leaf_paths: File paths for reading and saving data.
+            rawPlanes_ventral (np.ndarray): data 1.
+            rawPlanes_dorsal (np.ndarray): data 2.
+            info_path (str): Path to the info file.
+            det_only_flag (bool): Detection-only flag.
+            leaf_paths (Dict[str, str]):
+                A dictionary mapping leaf names to their corresponding file paths.
+                This is derived from `yaml_path` in `train_down_sample()` and used for I/O operations.
 
         Returns:
             cropInfo: Cropping information for the sample.
@@ -2451,11 +2527,13 @@ class FUSE_det:
         Segment the maximum intensity projection (MIP) image.
 
         Args:
-            maximumProjection: Input MIP image.
-            th: Threshold value (optional).
+            maximumProjection (npndarray): Input MIP image.
+            th (float): Threshold value (optional).
 
         Returns:
-            tuple: Cropping coordinates (a, b, c, d) for the segmented region.
+            tuple[int, int, int, int]: Cropping coordinates (a, b, c, d),
+            where `a:b` defines the x-range and `c:d` defines the y-range
+            to be used as `x[:, a:b, c:d]` when cropping the volume.
         """
         m, n = maximumProjection.shape
         if th is None:

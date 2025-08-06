@@ -62,3 +62,5 @@ sphinx-copybutton
 sphinxcontrib-video
 sphinx_togglebutton
 pydata_sphinx_theme
+sphinx_panels
+sphinx_design

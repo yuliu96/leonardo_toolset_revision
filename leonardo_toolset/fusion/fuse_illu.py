@@ -42,13 +42,6 @@ pd.set_option("display.width", 10000)
 
 class FUSE_illu:
     """
-    Main class for illumination-based multi-view fusion.
-
-    Handles the workflow for dual-illumination image fusion, including cropping, segmentation,
-    feature extraction, and final volume reconstruction.
-    """
-
-    """
     Main class for Leonardo-Fuse (along illumination).
 
     This class handles the workflow for fusion in data with dual-sided illumination.
@@ -113,6 +106,8 @@ class FUSE_illu:
             .to(torch.float)
             .to(self.train_params["device"])
         )
+
+        print("[Leonardo-Fuse] Backend: PyTorch | Device: {}".format(str(device)))
 
     def train_from_params(self, params: dict):
         """
@@ -207,13 +202,18 @@ class FUSE_illu:
                 Root directory to prepend when input data is provided as a relative path (str).
                 Ignored if inputs are arrays or lists of absolute paths.
             top_illu_data : dask.array.Array | np.ndarray | str
-                Top illumination data.
+                Top illumination data. Can be:
+                - A 3D array (Dask or NumPy),
+                - A single file path (str), relative to `data_path`.
             bottom_illu_data : dask.array.Array | np.ndarray | str
                 Bottom illumination data.
+                See `top_illu_data` for supported formats.
             left_illu_data : dask.array.Array | np.ndarray | str
                 Left illumination data.
+                See `top_illu_data` for supported formats.
             right_illu_data : dask.array.Array | np.ndarray | str
                 Right illumination data.
+                See `top_illu_data` for supported formats.
             save_path : str
                 Root path where output results will be saved.
             save_folder : str
@@ -224,31 +224,38 @@ class FUSE_illu:
             sparse_sample : bool, optional
                 Whether the specimen is mainly sparse structures.
                 If True, the fusion algorithm will adjust segmentation behavior.
-            cam_pos : str, optional
-                Camera position ('front' or 'back' in the image space).
+            cam_pos (str, optional):
+                Camera position in the image space. Must be either `'front'` or `'back'`.
+                If `'front'`, smaller z-indices are closer to the detection objective.
+                If `'back'`, larger z-indices are closer to the detection objective.
+                determines how the z-axis of the volume is interpreted.
             camera_position : str, optional
-                Camera position string for naming.
+                Camera position string for naming. It is only used for naming output files.
             display : bool, optional
                 Whether to visualize intermediate or final results using matplotlib.
 
         Returns:
             np.ndarray: The fused output image.
+
+        Notes:
+            - **Input format:** All input volumes must be in (Z, X, Y) format. Inputs must not contain channel dimensions.
+              If your data includes channels (e.g., shape (Z, X, Y, C) or (T, C, Z, X, Y)), please extract the relevant channel first.
+
+            - **File compatibility:** `.tif` files are reliably supported.
+              Some `.ome.tif` files may cause issues depending on your `bioio` version.
+              In such cases, please load the file manually and pass a `np.ndarray` instead.
         """
         if not os.path.exists(save_path):
             print("saving path does not exist.")
             return
         if not os.path.exists(os.path.join(save_path, save_folder)):
             os.makedirs(os.path.join(save_path, save_folder))
-        allowed_keys = parse_yaml_illu.__code__.co_varnames  # or手动列出
+        allowed_keys = parse_yaml_illu.__code__.co_varnames
         args_dict = {k: v for k, v in locals().items() if k in allowed_keys}
         args_dict.update({"train_params": self.train_params})
         args_dict.update(
             {
-                "file_name": os.path.join(
-                    save_path,
-                    save_folder,
-                    f"{camera_position+'_' if len(camera_position) != 0 else ''}illu_info.yaml",
-                )
+                "file_name": f"{camera_position+'_' if len(camera_position) != 0 else ''}illu_info.yaml",
             }
         )
         yaml_path = parse_yaml_illu(**args_dict)
@@ -525,6 +532,8 @@ class FUSE_illu:
         Run fusion using a precomputed fusion boundary.
 
         Args:
+            boundary_path : str
+                Absolute path of the precomputed fusion boundary in .tif file.
             data_path : str, optional
                 Root directory to prepend when input data is provided as a relative path (str).
                 Ignored if inputs are arrays or absolute paths.
@@ -541,14 +550,15 @@ class FUSE_illu:
             save_separate_results : bool, optional
                 Whether to save the fusion map as float32 files.
                 Set to `True` only if you plan to run Leonardo-DeStripe-Fuse afterward.
-            cam_pos : str, optional
-                Camera position ('front' or 'back' in the image space).
+            cam_pos (str, optional):
+                Camera position in the image space. Must be either `'front'` or `'back'`.
+                If `'front'`, smaller z-indices are closer to the detection objective.
+                If `'back'`, larger z-indices are closer to the detection objective.
+                determines how the z-axis of the volume is interpreted.
             camera_position : str, optional
-                Camera position string for naming.
+                Camera position string for naming. It is only used for naming output files.
             display : bool, optional
                 Whether to visualize intermediate or final results using matplotlib.
-            boundary_path : str
-                Absolute path of the precomputed fusion boundary in .tif file.
 
         Returns:
             np.ndarray: The fused output image.
@@ -760,9 +770,9 @@ class FUSE_illu:
         Perform specifically estimation of the fusion boundary.
 
         Args:
-            topF: NSCT features from the data with top-side detection.
-            bottomF: NSCT features from the data with bottom-side detection.
-            segMask: Segmentation mask.
+            topF (np.ndarray): NSCT features from the data with top-side detection.
+            bottomF (np.ndarray): NSCT features from the data with bottom-side detection.
+            segMask (np.ndarray): Segmentation mask.
 
         Returns:
             Fusion boundary.
@@ -800,11 +810,11 @@ class FUSE_illu:
         Extract NSCT features.
 
         Args:
-            s: Number of slices.
-            m: Number of rows.
-            n: Number of columns.
-            topVol: dataset 1.
-            bottomVol: dataset 2.
+            s (int): Number of slices.
+            m (int): Number of rows.
+            n (int): Number of columns.
+            topVol (np.ndarray): dataset 1.
+            bottomVol (np.ndarray): dataset 2.
 
         Returns:
             tuple: NSCT features for the two inputs respectively.
@@ -856,11 +866,11 @@ class FUSE_illu:
         Segment the sample.
 
         Args:
-            th_top, th_bottom: Thresholds for two volumes.
-            max_top, max_bottom: Maximum values for two volumes.
-            topVol, bottomVol: Top and bottom volumes.
-            topVol_F, bottomVol_F: Feature volumes.
-            th_top_F, th_bottom_F: Feature thresholds.
+            th_top, th_bottom (float): Thresholds for two volumes.
+            max_top, max_bottom (np.ndarray): Maximum values for two volumes.
+            topVol, bottomVol (np.ndarray): Top and bottom volumes.
+            topVol_F, bottomVol_F (np.ndarray): Feature volumes.
+            th_top_F, th_bottom_F (float): Feature thresholds.
             sparse_sample (bool): Whether to use sparse sampling.
 
         Returns:
@@ -1076,7 +1086,7 @@ def fusionResult(
     Perform the final fusion of top and bottom volumes using the computed boundary.
 
     Args:
-        T_flag (bool): Whether to transpose the result.
+        T_flag (bool): Whether to transpose the result. If `True`, the input will be transposed as `(Z, X, Y) → (Z, Y, X)`.
         topVol (np.ndarray): Top illumination volume.
         bottomVol (np.ndarray): Bottom illumination volume.
         boundary (np.ndarray): Fusion boundary.

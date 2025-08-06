@@ -1,7 +1,7 @@
 Installation
 ============
 
-Leonardo requires Python>=3.9. We highly recommend using :mod:`conda` 
+Leonardo requires Python>=3.10. We highly recommend using :mod:`conda` 
 virtual environment to install and operate Leonardo.
 
 PyPI
