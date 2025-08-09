@@ -1,3 +1,5 @@
+:html_theme.sidebar_secondary.remove:
+
 Tutorials
 =========
 This section contains various tutorials showcasing light-sheet data processing with :mod:`Leonardo`.

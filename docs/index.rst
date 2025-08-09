@@ -1,9 +1,8 @@
-.. leonardo documentation master file, created by
-   sphinx-quickstart on Sun Nov 24 16:50:21 2024.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+:html_theme.sidebar_secondary.remove:
 
-|Docs|
+.. image:: https://img.shields.io/github/actions/workflow/status/peng-lab/leonardo_toolset/docs.yml?branch=main
+   :target: https://github.com/peng-lab/leonardo_toolset/actions
+   :alt: Build Status
 
 Leonardo
 =======
@@ -28,11 +27,11 @@ Manuscript
 
 Preprint is available `here <https://doi.org/10.21203/rs.3.rs-5853941/v1>`_.
 
+
 .. grid:: 1 3 3 3
    :gutter: 3
 
    .. grid-item-card::
-      :img-top: _static/installation_icon.png
       :text-align: center
 
       **Installation**
@@ -49,7 +48,6 @@ Preprint is available `here <https://doi.org/10.21203/rs.3.rs-5853941/v1>`_.
          To the Installation
 
    .. grid-item-card::
-      :img-top: _static/icon_tutorial.png
       :text-align: center
 
       **Tutorials**
@@ -66,7 +64,6 @@ Preprint is available `here <https://doi.org/10.21203/rs.3.rs-5853941/v1>`_.
          To the Tutorials
 
    .. grid-item-card::
-      :img-top: _static/index_api.png
       :text-align: center
 
       **API Reference**
@@ -82,10 +79,11 @@ Preprint is available `here <https://doi.org/10.21203/rs.3.rs-5853941/v1>`_.
 
          To the API Reference
 
+
 .. toctree::
-   :maxdepth: 1
    :hidden:
 
    installation
    tutorials
    api
+

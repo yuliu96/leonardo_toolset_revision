@@ -1,11 +1,24 @@
+:html_theme.sidebar_secondary.remove:
+
 API reference
-===============
+=============
 
 This section provides the API-level documentation for the Leonardo toolset.
 
-.. toctree::
-   :maxdepth: 1
+.. list-table::
+   :widths: 30 70
+   :align: left
 
-   fuse_det
-   fuse_illu
+   * - :doc:`DeStripe <destripe>`
+     - Stripe removal based on graph neural networks, .etc.
+   * - :doc:`Fuse (along illumination) <fuse_illu>`
+     - Fusing datasets with dual-sided illumination.
+   * - :doc:`Fuse (along detection) <fuse_det>`
+     - Fusing datasets with dual-sided detection and/or dual-sided illumination.
+
+.. toctree::
+   :hidden:
+
    destripe
+   fuse_illu
+   fuse_det
