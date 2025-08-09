@@ -4,7 +4,6 @@ from bioio.writers import OmeTiffWriter
 from typing import Union
 import numpy as np
 import traceback
-import dask
 import open3d as o3d
 import torch
 from bioio import BioImage
