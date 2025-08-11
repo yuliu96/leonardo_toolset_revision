@@ -24,5 +24,11 @@ For a quick start, you can walk through [our tutorials and example notebooks](ht
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for information related to developing the code.
 
+## Issues:
+
+If you encounter any problems, please [file an issue] along with a detailed description.
+
 **MIT license**
+
+[file an issue]: https://github.com/peng-lab/leonardo_toolset/issues
 

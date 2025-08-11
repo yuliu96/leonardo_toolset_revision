@@ -1,3 +1,5 @@
+:html_theme.sidebar_secondary.remove:
+
 Installation
 ============
 
@@ -27,6 +29,25 @@ Additional Napari plugins can be installed separately:
 
 Leonardo has now been tested on Linux and Windows. 
 Leonardo may have issues on macOS caused by third-party dependencies, specifically resulting in a "metadata-generation-failed" error.
+
+.. note::
+
+   For Leonardo-DeStripe, if you are using the GPU-enabled version of JAX as backend on a machine **without CUDA or GPU support**, 
+   JAX may fail to initialize and raise an error when imported.
+
+   To avoid this, set the following environment variable before running your code to force JAX to use CPU only:
+
+   **Linux/macOS**
+   ::
+
+       export JAX_PLATFORMS=cpu
+
+   **Windows (CMD)**
+   ::
+
+       set JAX_PLATFORMS=cpu
+
+   For more context, see the `official JAX discussion <https://github.com/jax-ml/jax/discussions/14208>`_.
 
 GPU version
 ~~~~~~~~~~~

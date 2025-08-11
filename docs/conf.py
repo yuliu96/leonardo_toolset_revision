@@ -55,21 +55,51 @@ html_theme = "pydata_sphinx_theme"
 pygments_style = "sphinx"
 pygments_dark_style = "monokai"
 
+
 html_theme_options = {
-    "navigation_depth": 4,
-    "show_prev_next": False,
-    "show_toc_level": 2,
-    "secondary_sidebar_items": ["page-toc"],
+    "navbar_start": ["navbar-logo"],
+    "navbar_center": ["navbar-nav"],
+    "navbar_end": ["navbar-icon-links.html", "search-field.html"],
+    "navbar_persistent": [],
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/peng-lab/leonardo_toolset",
+            "icon": "fa-brands fa-github",
+        },
+        {
+            "name": "PyPI",
+            "url": "https://pypi.org/project/leonardo-toolset/",
+            "icon": "fa-solid fa-box-open",
+        },
+        {
+            "name": "Image.sc Forum",
+            "url": "https://forum.image.sc/t/software-release-leonardo-a-toolset-to-remove-sample-induced-aberrations-in-light-sheet-microscopy-images/107622/2",
+            "icon": "fa-brands fa-discourse",
+        },
+        {
+            "name": "Issues",
+            "url": "https://github.com/peng-lab/leonardo_toolset/issues",
+            "icon": "fa-solid fa-bug",
+        },
+    ],
+    "secondary_sidebar_items": {
+        "**": ["page-toc"],
+    },
 }
 
+
+# html_sidebars = {"pagename": []}
+html_sidebars = {"**": []}
 
 html_context = {
     "display_github": True,
-    "github_user": "yuliu96",
-    "github_repo": "leonardo-rtd",
+    "github_user": "peng-lab",
+    "github_repo": "leonardo_toolset",
     "github_version": "main",
     "conf_py_path": "/docs/",
 }
+
 
 html_show_sphinx = False
 epub_show_urls = "footnote"
@@ -110,4 +140,9 @@ autodoc_mock_imports = [
     "re",
     "colour",
     "haiku",
+    "torchvision",
 ]
+
+rst_prolog = """
+.. |Docs| replace:: `Docs <https://github.com/peng-lab/leonardo_toolset>`__
+"""
