@@ -125,13 +125,6 @@ class Args(argparse.Namespace):
         )
 
         p.add_argument(
-            "--sample_name",
-            action="store",
-            dest="sample_name",
-            type=str,
-        )
-
-        p.add_argument(
             "--top_illu_data",
             action="store",
             dest="top_illu_data",
@@ -206,6 +199,12 @@ class Args(argparse.Namespace):
         )
 
         p.add_argument(
+            "--display",
+            type=bool_args,
+            default="False",
+        )
+
+        p.add_argument(
             "--debug",
             action="store_true",
             dest="debug",
@@ -234,7 +233,6 @@ def main():
         )
         _ = exe.train(
             args.data_path,
-            args.sample_name,
             args.top_illu_data,
             args.bottom_illu_data,
             args.left_illu_data,
@@ -245,6 +243,7 @@ def main():
             args.sparse_sample,
             args.cam_pos,
             args.camera_position,
+            args.display,
         )
 
     except Exception as e:
