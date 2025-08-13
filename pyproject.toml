@@ -97,6 +97,7 @@ Documentation = "https://github.com/peng-lab/leonardo_toolset#README.md"
 
 [project.scripts]
 run_fuse_illu = "leonardo_toolset.fusion.bin.run_fuse_illu:main"
+run_fuse_det = "leonardo_toolset.fusion.bin.run_fuse_det:main"
 
 [tool.setuptools]
 package-dir = {"" = "."}
