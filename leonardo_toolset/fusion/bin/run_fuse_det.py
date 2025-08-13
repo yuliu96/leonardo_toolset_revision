@@ -64,7 +64,7 @@ class Args(argparse.Namespace):
         p.add_argument(
             "--require_precropping",
             type=bool_args,
-            default="True",
+            default=True,
         )
 
         p.add_argument(
@@ -107,20 +107,20 @@ class Args(argparse.Namespace):
         p.add_argument(
             "--require_segmentation",
             type=bool_args,
-            default="True",
+            default=True,
         )
 
         p.add_argument(
             "--skip_illuFusion",
             type=bool_args,
-            default="True",
+            default=True,
         )
 
         p.add_argument(
             "--device",
             action="store",
             dest="device",
-            default="cuda",
+            default=None,
             type=str,
         )
 
@@ -160,7 +160,7 @@ class Args(argparse.Namespace):
         p.add_argument(
             "--sparse_sample",
             type=bool_args,
-            default="False",
+            default=False,
         )
 
         p.add_argument(
@@ -257,7 +257,7 @@ class Args(argparse.Namespace):
         p.add_argument(
             "--save_separate_results",
             type=bool_args,
-            default="False",
+            default=False,
         )
 
         p.add_argument(
