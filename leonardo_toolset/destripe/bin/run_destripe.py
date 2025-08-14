@@ -11,7 +11,7 @@ import logging
 import sys
 import traceback
 
-from bioio.writers import OmeTiffWriter
+import tifffile
 
 from leonardo_toolset.destripe import DeStripe, get_module_version
 
@@ -326,7 +326,7 @@ def main():
             args.backend,
             args.device,
         )
-        _ = exe.train(
+        out = exe.train(
             args.is_vertical,
             args.x,
             args.mask,
@@ -338,6 +338,9 @@ def main():
             args.non_positive,
             **getattr(args, "kwargs", {}),
         )
+
+        tifffile.imwrite(args.save_path, out)
+
     except Exception as e:
         log.error("=============================================")
         if dbg:
