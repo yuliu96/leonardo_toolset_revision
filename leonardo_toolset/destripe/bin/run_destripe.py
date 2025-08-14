@@ -300,6 +300,15 @@ class Args(argparse.Namespace):
             dest="debug",
             help=argparse.SUPPRESS,
         )
+
+        p.add_argument(
+            "--save_path",
+            action="store",
+            dest="save_path",
+            type=str,
+            required=True,
+        )
+
         ns, unknown = p.parse_known_args(namespace=self)
         self.kwargs = parse_unknown_as_kwargs(unknown)
 
