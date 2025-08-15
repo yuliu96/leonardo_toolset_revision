@@ -11,8 +11,6 @@ import logging
 import sys
 import traceback
 
-import tifffile
-
 from leonardo_toolset.destripe import DeStripe, get_module_version
 
 ###############################################################################
