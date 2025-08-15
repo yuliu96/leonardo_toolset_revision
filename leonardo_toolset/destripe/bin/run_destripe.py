@@ -10,7 +10,8 @@ import argparse
 import logging
 import sys
 import traceback
-
+import json
+import re
 from leonardo_toolset.destripe import DeStripe, get_module_version
 
 ###############################################################################
@@ -32,9 +33,6 @@ def bool_args(arg):
         return False
     elif ("true" == arg) or ("True" == arg):
         return True
-
-
-import json, re
 
 
 def _smart_cast(s):

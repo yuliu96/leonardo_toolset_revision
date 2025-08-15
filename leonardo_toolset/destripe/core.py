@@ -3,6 +3,9 @@ from typing import Dict, Union
 import numpy as np
 import copy
 import dask.array as da
+from torch.nn import functional as F
+import tempfile
+import gc
 import matplotlib.pyplot as plt
 import torch
 import tqdm
@@ -52,10 +55,6 @@ try:
 except Exception as e:
     print(f"Error: {e}. process without jax")
     jax_flag = 0
-
-from torch.nn import functional as F
-import tempfile
-import gc
 
 
 class DeStripe:
@@ -892,12 +891,14 @@ class DeStripe:
         finally:
             try:
                 del fusion_mask
-            except:
+            except NameError:
                 pass
             gc.collect()
             try:
                 os.remove(os.path.join(base, "fusion_mask.npy"))
-            except:
+            except FileNotFoundError:
+                pass
+            except PermissionError:
                 pass
             try:
                 if save_path is not None:
@@ -907,5 +908,5 @@ class DeStripe:
                         os.path.join(base, f"{stem}__done.npy"),
                         save_path,
                     )
-            except:
+            except (OSError, ValueError):
                 pass
