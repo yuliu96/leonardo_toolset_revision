@@ -335,7 +335,8 @@ def main():
             args.backend,
             args.device,
         )
-        out = exe.train(
+        _ = exe.train(
+            args.save_path,
             args.is_vertical,
             args.x,
             args.mask,
@@ -347,8 +348,6 @@ def main():
             args.non_positive,
             **getattr(args, "kwargs", {}),
         )
-
-        tifffile.imwrite(args.save_path, out)
 
     except Exception as e:
         log.error("=============================================")
