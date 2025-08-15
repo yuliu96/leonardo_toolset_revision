@@ -33,7 +33,11 @@ def finalize_save(result_npy, done_npy, save_path):
 
     view = result_mm[:k_done]
     arr = np.asarray(view)
-    tifffile.imwrite(save_path, arr)
+    tifffile.imwrite(
+        save_path,
+        arr,
+        photometric="minisblack",
+    )
 
     del result_mm, done_mm
     gc.collect()

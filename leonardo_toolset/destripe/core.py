@@ -811,14 +811,14 @@ class DeStripe:
 
                 if os.path.isdir(fusion_mask):
                     count = len([f for f in os.listdir(fusion_mask)])
-                    assert count == X.shape[1], print(
+                    assert count == X.shape[0], print(
                         "the folder of fusion mask should contain {} files in total.".format(
                             X.shape[1]
                         )
                     )
                     fusion_mask = save_memmap_from_images(
                         fusion_mask,
-                        os.path.join(base, "fusion_mask.dat"),
+                        os.path.join(base, "fusion_mask.npy"),
                     )
 
                 elif os.path.isfile(fusion_mask):
@@ -896,7 +896,7 @@ class DeStripe:
                 pass
             gc.collect()
             try:
-                os.remove(os.path.join(base, "fusion_mask.dat"))
+                os.remove(os.path.join(base, "fusion_mask.npy"))
             except:
                 pass
             try:
