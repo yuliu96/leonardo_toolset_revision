@@ -8,7 +8,7 @@ import numpy as np
 from jax import jit
 
 
-class GuidedFilterLoss:
+class GuidedFilterLoss_loss:
     def __init__(self, r, eps=1e-9):
         self.r, self.eps = r, eps
 
@@ -43,34 +43,6 @@ class GuidedFilterLoss:
         b = mean_x_y - A * mean_x_y
         A, b = self.boxfilter(A) / N, self.boxfilter(b) / N
         return A * x + b
-
-
-def non_pos_unit(
-    outputGNNraw_original,
-    outputGNNraw,
-    mask_dict,
-    targets,
-    r,
-):
-    m, n = outputGNNraw_original.shape[-2:]
-    outputGNNraw2 = (
-        outputGNNraw * (1 - mask_dict["non_positive_mask"])
-        + targets * mask_dict["non_positive_mask"]
-    )
-    outputGNNraw_original = jnp.concatenate(
-        (outputGNNraw_original, outputGNNraw, outputGNNraw2), 0
-    )
-    outputGNNraw_original_f = jax.image.resize(
-        outputGNNraw_original,
-        (
-            3,
-            1,
-            m,
-            n // r,
-        ),
-        method="bilinear",
-    )
-    return outputGNNraw_original, outputGNNraw_original_f
 
 
 def identical_unit(
@@ -250,16 +222,12 @@ class Loss_jax:
             else self.HessianRegularizationLoss_plain
         )
 
-        self.GuidedFilterLoss = GuidedFilterLoss(
+        self.GuidedFilterLoss = GuidedFilterLoss_loss(
             r=train_params["max_pool_kernel_size"],
             eps=1,
         )
-        if shape_params["non_positive"]:
-            self.non_postive_uint = non_pos_unit
-            self.main_loss = lambda a, b: 0
-        else:
-            self.non_postive_uint = identical_unit
-            self.main_loss = self.gf_loss
+        self.non_postive_uint = identical_unit
+        self.main_loss = self.gf_loss
 
     def gf_loss(self, targets, outputGNNraw_original):
         return 10 * jnp.sum(
@@ -536,33 +504,28 @@ class Loss_jax:
         )
 
         mse = self.main_loss(targets, outputGNNraw_original)
-        output_att_dict = [jaxwt.wavedec2(output_att, "db4", level=1, mode="reflect")]
-        lconst = 6
-        for _ in range(lconst - 1):
-            output_att_dict.append(
-                jaxwt.wavedec2(output_att_dict[-1][0], "db4", level=1, mode="reflect")
-            )
 
-        output_gnn_hr_dict = [
-            jaxwt.wavedec2(outputGNNraw_full, "db4", level=1, mode="reflect")
+        lconst = 6
+
+        wave_decom_dict = [
+            jaxwt.wavedec2(
+                output_att - outputGNNraw_full, "db4", level=1, mode="reflect"
+            )
         ]
         for _ in range(lconst - 1):
-            output_gnn_hr_dict.append(
+            wave_decom_dict.append(
                 jaxwt.wavedec2(
-                    output_gnn_hr_dict[-1][0], "db4", level=1, mode="reflect"
+                    wave_decom_dict[-1][0],
+                    "db4",
+                    level=1,
+                    mode="reflect",
                 )
             )
 
         for i in range(lconst):
-            mse = mse + 20 * jnp.sum(
-                jnp.abs(output_att_dict[i][1][0] - output_gnn_hr_dict[i][1][0])
-            )
-            mse = mse + 20 * jnp.sum(
-                jnp.abs(output_att_dict[i][1][1] - output_gnn_hr_dict[i][1][1])
-            )
-            mse = mse + 40 * jnp.sum(
-                jnp.abs(output_att_dict[i][1][2] - output_gnn_hr_dict[i][1][2])
-            )
+            mse = mse + 20 * jnp.sum(jnp.abs(wave_decom_dict[i][1][0]))
+            mse = mse + 20 * jnp.sum(jnp.abs(wave_decom_dict[i][1][1]))
+            mse = mse + 40 * jnp.sum(jnp.abs(wave_decom_dict[i][1][2]))
 
         outputGNNraw_original, outputGNNraw_original_f = self.non_postive_uint(
             outputGNNraw_original,

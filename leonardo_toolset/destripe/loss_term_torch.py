@@ -43,33 +43,6 @@ class GuidedFilterLoss:
         return A * x + b
 
 
-def non_pos_unit(
-    outputGNNraw_original,
-    outputGNNraw,
-    mask_dict,
-    targets,
-    r,
-):
-    m, n = outputGNNraw_original.shape[-2:]
-    outputGNNraw2 = (
-        outputGNNraw * (1 - mask_dict["non_positive_mask"])
-        + targets * mask_dict["non_positive_mask"]
-    )
-    outputGNNraw_original = torch.cat(
-        (outputGNNraw_original, outputGNNraw, outputGNNraw2), 0
-    )
-    outputGNNraw_original_f = F.interpolate(
-        outputGNNraw_original,
-        (
-            m,
-            n // r,
-        ),
-        mode="bilinear",
-        align_corners=True,
-    )
-    return outputGNNraw_original, outputGNNraw_original_f
-
-
 def identical_unit(
     outputGNNraw_original,
     outputGNNraw,
@@ -242,12 +215,8 @@ class Loss_torch(nn.Module):
             eps=1,
         )
 
-        if shape_params["non_positive"]:
-            self.non_postive_uint = non_pos_unit
-            self.main_loss = lambda a, b: 0
-        else:
-            self.non_postive_uint = identical_unit
-            self.main_loss = self.gf_loss
+        self.non_postive_uint = identical_unit
+        self.main_loss = self.gf_loss
 
         self.register_buffer("Dx_f", Dx_f.to(torch.float))
         self.register_buffer("Dy_f", Dy_f.to(torch.float))
