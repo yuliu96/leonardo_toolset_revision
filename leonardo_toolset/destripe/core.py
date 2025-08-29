@@ -348,6 +348,7 @@ class DeStripe:
                 illu_orient=sample_params["illu_orient"],
                 non_positive=sample_params["non_positive"],
                 allow_stripe_deviation=sample_params["allow_stripe_deviation"],
+                gf_kernel_size=train_params["gf_kernel_size"],
             )
         else:
             Y = 10**Y_GU

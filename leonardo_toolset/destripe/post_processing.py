@@ -599,6 +599,7 @@ def linear_propagation(
     device=None,
     non_positive=False,
     r=10,
+    gf_kernel_size=49,
     desc="",
 ):
 
@@ -620,14 +621,15 @@ def linear_propagation(
 
     hX = rotate(hX, -angle_offset, mode="nearest")
     b = rotate(b, -angle_offset, mode="nearest")
-    rr = 189
-    b = (
-        F.pad(b.cpu(), (0, 0, rr // 2, rr // 2), "reflect")
-        .unfold(-2, rr, 1)
-        .median(dim=-1)[0]
-        .cuda()
-    )
 
+    b = F.pad(b, (0, 0, gf_kernel_size // 2, gf_kernel_size // 2), "reflect")
+
+    chunks = torch.split(b, 64, dim=-1)
+    b = []
+    for _, chunk in enumerate(chunks):
+        b.append(chunk.unfold(-2, gf_kernel_size, 1).median(dim=-1)[0])
+
+    b = torch.cat(b, -1)
     m, n = b[:, :, ::r, :].shape[-2:]
 
     foreground = torch.where(foreground.sum(-2, keepdim=True) == 0, 1, foreground)
@@ -788,6 +790,7 @@ def post_process_module(
     non_positive=False,
     r=10,
     n_epochs=1000,
+    gf_kernel_size=49,
 ):
     if illu_orient is not None:
         if device == None:
@@ -875,6 +878,7 @@ def post_process_module(
                     allow_stripe_deviation=allow_stripe_deviation,
                     r=r,
                     n_epochs=n_epochs,
+                    gf_kernel_size=gf_kernel_size,
                     desc="(No. {} out of {} angles)".format(iex, iex_total),
                 )
                 target_wavelet = simple_rotate(target_wavelet, angle, device)
