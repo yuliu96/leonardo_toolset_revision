@@ -3,6 +3,11 @@
 API reference
 =============
 
+
+PyPI
+-----
+
+
 This section provides the API-level documentation for the Leonardo toolset.
 
 .. list-table::
