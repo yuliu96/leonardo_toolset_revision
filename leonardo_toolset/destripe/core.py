@@ -368,7 +368,7 @@ class DeStripe:
         fusion_mask: Union[np.ndarray, da.core.Array] = None,
         display: bool = False,
         device: str = "cpu",
-        non_positive: bool = False,
+        non_positive: bool = True,
         allow_stripe_deviation: bool = False,
         backend: str = "jax",
         flag_compose: bool = False,
@@ -655,7 +655,7 @@ class DeStripe:
         angle_offset: list[float] = None,
         display: bool = False,
         display_angle_orientation: bool = False,
-        non_positive: bool = False,
+        non_positive: bool = True,
         allow_stripe_deviation: bool = False,
         **kwargs,
     ):
