@@ -729,12 +729,12 @@ class DeStripe:
             Although Leonardo-DeSrtripe(-Fuse) is mainly empowered by a graph a neural network,
             there is an additional post-processing module to further preserve sample details by using illumination priors.
             This can be automatically turned on by giving parameter ``illu_orient`` (in Leonardo-DeStripe mode) through ``**kwargs``.
-            This parameter specifies the direction of illumination in the **image space**.
+            This parameter specifies the direction of illumination in the image space.
 
             - Valid options are: ``"top"``, ``"bottom"``, ``"left"``, ``"right"``,
               and dual-side illuminations: ``"top-bottom"``, ``"left-right"`` (e.g., Ultramicroscope Blaze).
 
-            - In **Leonardo-DeStripe-Fuse mode**, provide multiple orientations via
+            - In Leonardo-DeStripe-Fuse mode, provide multiple orientations via
               ``illu_orient_0``, ``illu_orient_1``, … inside ``**kwargs``.
 
         Notes:
