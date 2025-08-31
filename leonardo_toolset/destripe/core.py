@@ -392,10 +392,18 @@ class DeStripe:
             display (bool): Whether to display intermediate results.
             device (str): Device to use.
             non_positive (bool): Whether to allow non-positive values.
+            allow_stripe_deviation (bool): Whether to enable an extra penalty on stripes during
+                post-processing. When True, stripes will be suppressed more strongly
+                at the potential cost of slightly sacrificing sample details.
+                Set True for slightly tilted/wavy stripes or
+                slow illumination drift; keep False to better preserve fine sample details.
+                If `illu_orient` is not specified (post-processing disabled), this flag has no effect.
             backend (str): Backend to use ('jax' or 'torch').
             flag_compose (bool): Whether to compose multiple inputs.
             display_angle_orientation (bool): Whether to display angle orientation.
             illu_orient (str): Illumination orientation.
+            save_path (str) : Absolute path to save the result volume. The file name must end with
+                `.tif` or `.tiff`, as the output is currently supported only in TIF/TIFF format.
 
         Returns:
             np.ndarray: The destriped output volume.
@@ -656,6 +664,9 @@ class DeStripe:
         (also for Leonardo-DeStripe-Fuse).
 
         Args:
+            save_path : str
+                Absolute path to save the result volume. The file name must end with
+                `.tif` or `.tiff`, as the output is currently supported only in TIF/TIFF format.
             is_vertical : bool
                 Whether the stripes are vertical.
             x : dask.array.Array | np.ndarray | str
@@ -681,6 +692,15 @@ class DeStripe:
                 Whether to display check for angle orientation.
             non_positive : bool
                 Whether the stripes are non-positive only.
+                It only affects post-processing module for sample structure preservation (ill. prior, see manuscript).
+                If `illu_orient` is not specified, post-processing will be disabled, and this variable will have no effect.
+            allow_stripe_deviation : bool
+                Whether to enable an extra penalty on stripes during
+                post-processing. When True, stripes will be suppressed more strongly
+                at the potential cost of slightly sacrificing sample details.
+                Set True for slightly tilted/wavy stripes or
+                slow illumination drift; keep False to better preserve fine sample details.
+                If `illu_orient` is not specified (post-processing disabled), this flag has no effect.
             **kwargs
                 Additional keyword arguments for advanced workflows.
 
