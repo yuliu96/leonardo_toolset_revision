@@ -829,22 +829,32 @@ class DeStripe:
                     "fusion mask is missing."
                 )
 
-                if os.path.isdir(fusion_mask):
-                    count = len([f for f in os.listdir(fusion_mask)])
-                    assert count == X.shape[0], print(
-                        "the folder of fusion mask should contain {} files in total.".format(
-                            X.shape[1]
-                        )
-                    )
-                    fusion_mask = save_memmap_from_images(
-                        fusion_mask,
-                        os.path.join(base, "fusion_mask.npy"),
-                    )
-
-                elif os.path.isfile(fusion_mask):
-                    fusion_mask = np.load(fusion_mask)["mask"]
-                else:
+                if isinstance(fusion_mask, np.ndarray):
                     pass
+                elif isinstance(fusion_mask, str):
+                    if os.path.isdir(fusion_mask):
+                        count = len([f for f in os.listdir(fusion_mask)])
+                        assert count == X.shape[0], print(
+                            "the folder of fusion mask should contain {} files in total.".format(
+                                X.shape[1]
+                            )
+                        )
+                        fusion_mask = save_memmap_from_images(
+                            fusion_mask,
+                            os.path.join(base, "fusion_mask.npy"),
+                        )
+                    elif os.path.isfile(fusion_mask):
+                        fusion_mask = np.load(fusion_mask)["mask"]
+                    else:
+                        print(
+                            "fusion_mask should be either a folder path, a file path, or a np.ndarray."
+                        )
+                        return
+                else:
+                    print(
+                        "fusion_mask should be either a folder path, a file path, or a np.ndarray."
+                    )
+                    return
 
                 if fusion_mask.ndim == 3:
                     fusion_mask = fusion_mask[None]
